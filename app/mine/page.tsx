@@ -8,6 +8,7 @@ import { CountUp } from "@/components/CountUp";
 import type { MiningStatus, MineOutcome, BuyPackOutcome } from "@/lib/types";
 import { emitLedgerChange } from "@/lib/ledgerEvents";
 import { formatCC, formatDC, round2 } from "@/lib/format";
+import { toast } from "sonner";
 import {
   Pickaxe,
   Loader2,
@@ -15,7 +16,6 @@ import {
   Sparkles,
   Flame,
   CircleCheck,
-  CircleAlert,
   Lock,
   Vault,
   Cpu,
@@ -48,7 +48,6 @@ function fmtCountdown(ms: number): string {
 }
 
 type Phase = "idle" | "scanning" | "revealing" | "result";
-type Toast = { kind: "error" | "success"; msg: string } | null;
 
 export default function MinePage() {
   return (
@@ -68,11 +67,9 @@ function Mine() {
   const [reveal, setReveal] = useState<number[]>([]);
   const [tally, setTally] = useState(0);
   const [scanPairs, setScanPairs] = useState(0);
-  const [toast, setToast] = useState<Toast>(null);
   const [now, setNow] = useState(() => Date.now());
 
   const mounted = useRef(true);
-  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     mounted.current = true;
     return () => {
@@ -101,12 +98,6 @@ function Mine() {
     const id = setInterval(() => setNow(Date.now()), 30_000);
     return () => clearInterval(id);
   }, []);
-
-  function showToast(kind: "error" | "success", msg: string) {
-    setToast({ kind, msg });
-    if (toastTimer.current) clearTimeout(toastTimer.current);
-    toastTimer.current = setTimeout(() => mounted.current && setToast(null), 3200);
-  }
 
   const totalPairs = status ? status.tokensPerSide * status.tokensPerSide : 1e10;
 
@@ -143,7 +134,7 @@ function Mine() {
         if (mounted.current) {
           setPhase("idle");
           setRunning(false);
-          showToast("error", d.message || "Couldn't mine right now.");
+          toast.error(d.message || "Couldn't mine right now.");
         }
         await fetchStatus();
         return;
@@ -154,7 +145,7 @@ function Mine() {
       if (mounted.current) {
         setPhase("idle");
         setRunning(false);
-        showToast("error", "Network error. Try again.");
+        toast.error("Network error. Try again.");
       }
       return;
     }
@@ -197,15 +188,15 @@ function Mine() {
       });
       const d = await r.json().catch(() => ({}));
       if (!r.ok) {
-        showToast("error", d.message || "Couldn't unlock that pack.");
+        toast.error(d.message || "Couldn't unlock that pack.");
       } else {
         const b = d as BuyPackOutcome;
-        showToast("success", `Unlocked ${b.mines} mines · burned ${b.fee} CC 🔥`);
+        toast.success(`Unlocked ${b.mines} mines · burned ${b.fee} CC 🔥`);
         await Promise.all([refreshMe(), fetchStatus()]);
         emitLedgerChange();
       }
     } catch {
-      showToast("error", "Network error. Try again.");
+      toast.error("Network error. Try again.");
     } finally {
       if (mounted.current) setBuying(false);
     }
@@ -221,23 +212,6 @@ function Mine() {
 
   return (
     <div className="mx-auto max-w-xl space-y-4">
-      {toast && (
-        <div
-          className={`animate-toast-in-up fixed bottom-4 right-4 z-[100] flex max-w-[calc(100vw-2rem)] items-center gap-2 rounded-capsule border px-4 py-2.5 text-sm shadow-glow ${
-            toast.kind === "error"
-              ? "border-red-500/40 bg-red-500/15 text-red-200"
-              : "border-teal-500/40 bg-teal-500/15 text-teal-100"
-          }`}
-        >
-          {toast.kind === "error" ? (
-            <CircleAlert size={16} />
-          ) : (
-            <CircleCheck size={16} />
-          )}
-          {toast.msg}
-        </div>
-      )}
-
       <div className="text-center">
         <h1 className="flex items-center justify-center gap-2 font-display text-2xl font-bold text-white">
           <Pickaxe size={22} className="text-ember-400" /> Mining Rig
