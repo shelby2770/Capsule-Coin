@@ -82,10 +82,12 @@ async function syncSheet(state) {
   const usdPerCC = r4(bdtPerCC / C.usdBdtRate);
   const spread = r1(stddev(balancesAt(state, now)));
   const circulating = state.members.reduce((s, m) => s + Math.max(0, m.balance), 0);
+  const circulatingDc = state.members.reduce((s, m) => s + Math.max(0, m.dcBalance || 0), 0);
+  const standingOf = (m) => (m.banned ? "BANNED" : m.graceUntil ? "GRACE" : "OK");
   const nameOf = (e) => (e ? (state.members.find((x) => x.email === e)?.name || e) : "");
   const auth = new google.auth.JWT({ email: svc.client_email, key: svc.private_key, scopes: ["https://www.googleapis.com/auth/spreadsheets"] });
   const sheets = google.sheets({ version: "v4", auth });
-  const TABS = ["Value", "Members", "Transactions", "Requests"];
+  const TABS = ["Value", "Members", "Mining", "Transactions", "Requests"];
   const meta = await sheets.spreadsheets.get({ spreadsheetId: SHEET_ID });
   const have = new Set((meta.data.sheets || []).map((s) => s.properties.title));
   const missing = TABS.filter((t) => !have.has(t));
@@ -93,19 +95,22 @@ async function syncSheet(state) {
   const valueRows = [
     ["Capsule Coin — live mirror", ""], ["Generated (UTC+6)", bdt(new Date(now).toISOString())],
     ["1 CC (BDT)", bdtPerCC], ["1 CC (USD)", usdPerCC], ["Balance spread (σ)", spread],
-    ["Circulating supply (CC)", circulating], ["Transactions", state.transactions.length],
+    ["Circulating supply (CC)", circulating], ["Circulating DC", circulatingDc], ["Transactions", state.transactions.length],
     ["Members joined", state.members.filter((m) => m.verified).length],
     ["Note", "Auto-synced by the Capsule Coin server after every change. Read-only mirror — the app is the source of truth."],
   ];
-  const memberRows = [["Email", "Name", "Role", "Balance (CC)", "Joined", "Last Mined (UTC+6)"],
-    ...[...state.members].sort((a, b) => b.balance - a.balance).map((m) => [m.email, m.name, m.role, m.balance, m.verified ? "yes" : "no", bdt(m.lastMinedAt)])];
-  const txRows = [["Seq", "Type", "From", "To", "Amount (CC)", "Memo", "Created (UTC+6)", "Hash"],
-    ...state.transactions.map((t) => [t.seq, t.type, nameOf(t.fromEmail), nameOf(t.toEmail), t.amountCC, t.memo, bdt(t.createdAt), t.hash])];
+  const memberRows = [["Email", "Name", "Role", "Balance (CC)", "DC", "Joined", "Standing", "Last Mined (UTC+6)"],
+    ...[...state.members].sort((a, b) => b.balance - a.balance).map((m) => [m.email, m.name, m.role, m.balance, m.dcBalance || 0, m.verified ? "yes" : "no", standingOf(m), bdt(m.lastMinedAt)])];
+  const mineRows = [["Seq", "Miner", "Amount", "Currency", "Memo", "Created (UTC+6)", "Hash"],
+    ...state.transactions.filter((t) => t.type === "MINE").map((t) => [t.seq, nameOf(t.toEmail), t.amountCC, t.currency || "CC", t.memo, bdt(t.createdAt), t.hash])];
+  const txRows = [["Seq", "Type", "Currency", "From", "To", "Amount", "Memo", "Created (UTC+6)", "Hash"],
+    ...state.transactions.filter((t) => t.type !== "MINE").map((t) => [t.seq, t.type, t.currency || "CC", nameOf(t.fromEmail), nameOf(t.toEmail), t.amountCC, t.memo, bdt(t.createdAt), t.hash])];
   const reqRows = [["ID", "Payer", "Payee", "Amount (CC)", "Item", "Note", "Status", "Created (UTC+6)", "Resolved (UTC+6)"],
     ...state.transfers.map((r) => [r.id, r.fromName, r.toName, r.amountCC, r.item, r.note, r.status, bdt(r.createdAt), bdt(r.resolvedAt)])];
   await sheets.spreadsheets.values.batchClear({ spreadsheetId: SHEET_ID, requestBody: { ranges: TABS } });
   await sheets.spreadsheets.values.batchUpdate({ spreadsheetId: SHEET_ID, requestBody: { valueInputOption: "RAW", data: [
     { range: "Value!A1", values: valueRows }, { range: "Members!A1", values: memberRows },
+    { range: "Mining!A1", values: mineRows },
     { range: "Transactions!A1", values: txRows }, { range: "Requests!A1", values: reqRows },
   ] } });
   return bdtPerCC;
@@ -141,7 +146,7 @@ async function syncSheet(state) {
     const seq = txs.length + 1;
     const payload = [seq, "TRANSFER", from, to, cc, "", createdAt, memo].join("|");
     const hash = crypto.createHash("sha256").update(prev + "|" + payload).digest("hex");
-    txs.push({ seq, id: crypto.randomUUID(), type: "TRANSFER", fromEmail: from, toEmail: to, amountCC: cc, offerId: null, memo, createdAt, prevHash: prev, hash, externalId: null });
+    txs.push({ seq, id: crypto.randomUUID(), type: "TRANSFER", currency: "CC", fromEmail: from, toEmail: to, amountCC: cc, offerId: null, memo, createdAt, prevHash: prev, hash, externalId: null });
     const byE = Object.fromEntries(state.members.map((m) => [m.email, m]));
     byE[to].balance = round2(byE[to].balance + cc);
     byE[from].balance = round2(byE[from].balance - cc);

@@ -59,8 +59,40 @@ export const config = {
     // ~6 tk reads as ~2.4 tk). 1 = no change.
     power: num(process.env.CC_VALUE_POWER, 0.5),
   },
-  // Members may go negative down to this floor (a shared credit line). Configurable.
+  // Members may go negative down to this SOFT floor (a shared credit line). Crossing
+  // it no longer hard-blocks a spend; it starts a grace countdown (see `grace`).
   balanceFloor: num(process.env.BALANCE_FLOOR, -500),
+  // Dark Capsule Coin (DC) — the elite second currency. Mining mints DC; DC is spent
+  // on non-food trades (DesertHouse/Gemini-routed) and converts back to CC.
+  dc: {
+    // DC->CC conversion: CC = x * b(x) * m(S), fitted to 2DC->1, 10->6, 20->13.
+    //   b(x) = bulkMax - bulkSpread * e^(-x / bulkScale)  — per-DC rate, rises with
+    //          size, bounded at ~bulkMax (~0.68 CC/DC).
+    //   m(S) = clamp((refSupply / S)^supplyGamma, clampMin, clampMax)  — scarcity =
+    //          value: MORE total DC in circulation => LESS CC per DC.
+    // S = sum of every member's dcBalance. Retune refSupply to the post-migration total.
+    bulkMax: num(process.env.DC_BULK_MAX, 0.677),
+    bulkSpread: num(process.env.DC_BULK_SPREAD, 0.218),
+    bulkScale: num(process.env.DC_BULK_SCALE, 9.615), // = 1 / 0.104
+    refSupply: num(process.env.DC_REF_SUPPLY, 200),
+    supplyGamma: num(process.env.DC_SUPPLY_GAMMA, 0.4),
+    clampMin: num(process.env.DC_CLAMP_MIN, 0.5),
+    clampMax: num(process.env.DC_CLAMP_MAX, 1.5),
+    minConvert: num(process.env.DC_MIN_CONVERT, 1), // smallest DC->CC conversion
+    dailyCapDc: num(process.env.DC_DAILY_CAP, 500), // max DC a member converts per UTC day
+    // Buy DC with real money (admin-recorded). 0 = rate not set yet. Proceeds are
+    // tallied into the Capsule Fruit Fund, maintained by the Fruit Minister (Jakir).
+    bdtPerDc: num(process.env.DC_BDT_PER_DC, 0),
+    fruitMinisterEmail:
+      process.env.FRUIT_MINISTER_EMAIL || "jakir.hossen@orbitax.com",
+  },
+  // Credit-floor grace / ban. balanceFloor (above) is the SOFT trigger: cross below
+  // it and a graceDays countdown starts; recover to >= it in time or be permanently
+  // banned. hardFloor is the absolute stop a single spend may never breach.
+  grace: {
+    hardFloor: num(process.env.CC_HARD_FLOOR, -1000),
+    graceDays: num(process.env.CC_GRACE_DAYS, 3),
+  },
   transfers: {
     // Pending transfer requests are silently expired after this long with no
     // decision, so stale requests don't linger. Default 2 days.

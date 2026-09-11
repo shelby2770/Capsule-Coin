@@ -26,6 +26,11 @@ const STATUS: Record<string, number> = {
   // DesertHouse integration
   NOT_MEMBER: 400,
   NOT_PARTICIPANT: 403,
+  // Dark Capsule Coin
+  INSUFFICIENT_DC: 409,
+  DAILY_CAP: 429,
+  BANNED: 403,
+  GRACE_LOCKED: 409,
 };
 
 /** Maps a thrown LedgerError to a clean JSON response; anything else -> 500. */

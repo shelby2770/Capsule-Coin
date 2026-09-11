@@ -721,6 +721,16 @@ function ensureMemberDraft(
   return m;
 }
 
+/** A permanently-banned member can do nothing (used across all mutation paths). */
+function assertNotBanned(m: Member): void {
+  if (m.banned) {
+    throw new LedgerError(
+      "BANNED",
+      "Your account is permanently banned (missed the credit-floor grace period). Contact an admin.",
+    );
+  }
+}
+
 function appendTransaction(
   draft: LedgerState,
   data: {
@@ -1612,6 +1622,153 @@ export async function buyMiningPack(actor: {
       nextTier: nextTierFor(me),
       fee: tier.fee,
       mines: tier.mines,
+    };
+  });
+}
+
+// ── Dark Capsule Coin: DC <-> CC conversion ─────────────────────────────────
+/** Total DC held across all members — the market supply S for the rate curve. */
+function totalDcSupply(s: LedgerState): number {
+  return round2(s.members.reduce((acc, m) => acc + Math.max(0, m.dcBalance), 0));
+}
+
+/** DC a member has already converted to CC during the given UTC day. */
+function dcConvertedToday(s: LedgerState, email: string, nowMs: number): number {
+  const today = dayKey(nowMs);
+  let sum = 0;
+  for (const t of s.transactions) {
+    if (
+      t.type === "CONVERT" &&
+      t.currency === "DC" &&
+      t.fromEmail === email &&
+      dayKey(Date.parse(t.createdAt)) === today
+    ) {
+      sum += t.amountCC;
+    }
+  }
+  return round2(sum);
+}
+
+/**
+ * Pure DC->CC quote. CC = x * b(x) * m(S):
+ *   b(x) = bulkMax - bulkSpread * e^(-x/bulkScale)               (bounded bulk bonus)
+ *   m(S) = clamp((refSupply/S)^supplyGamma, clampMin, clampMax)  (scarcity = value)
+ * Returns CC out, the effective per-DC rate, and the supply multiplier.
+ */
+export function quoteDcToCc(
+  dcAmount: number,
+  dcSupply: number,
+): { cc: number; perDc: number; multiplier: number } {
+  const c = config.dc;
+  const x = Math.max(0, Number(dcAmount) || 0);
+  const bulk = c.bulkMax - c.bulkSpread * Math.exp(-x / Math.max(1e-9, c.bulkScale));
+  const S = Math.max(1, dcSupply); // guard div-by-zero; a near-empty market reads "scarce"
+  const rawM = Math.pow(c.refSupply / S, c.supplyGamma);
+  const m = Math.min(c.clampMax, Math.max(c.clampMin, rawM));
+  const perDc = Math.max(0, bulk * m);
+  return { cc: round2(x * perDc), perDc: round2(perDc), multiplier: round2(m) };
+}
+
+export type DcConvertStatus = {
+  dcBalance: number;
+  ccBalance: number;
+  supply: number;
+  minConvert: number;
+  dailyCapDc: number;
+  convertedToday: number;
+  remainingToday: number;
+};
+
+export async function dcConvertStatus(email: string): Promise<DcConvertStatus> {
+  const s = await ensureLoaded();
+  const lower = email.trim().toLowerCase();
+  const me = s.members.find((m) => m.email === lower);
+  const convertedToday = dcConvertedToday(s, lower, Date.now());
+  return {
+    dcBalance: round2(me?.dcBalance ?? 0),
+    ccBalance: round2(me?.balance ?? 0),
+    supply: totalDcSupply(s),
+    minConvert: config.dc.minConvert,
+    dailyCapDc: config.dc.dailyCapDc,
+    convertedToday,
+    remainingToday: round2(Math.max(0, config.dc.dailyCapDc - convertedToday)),
+  };
+}
+
+export type DcConvertResult = {
+  dcSpent: number;
+  ccReceived: number;
+  perDc: number;
+  multiplier: number;
+  dcBalance: number;
+  ccBalance: number;
+  supply: number;
+};
+
+/**
+ * Convert DC -> CC. Destroys the DC (a CONVERT/DC leg) and mints CC (a CONVERT/CC
+ * leg); the destroyed DC reopens mining headroom (reserveRemaining counts it). DC
+ * can never go negative. Allowed even while in credit-floor grace (it's a way back
+ * to solvency), but blocked for a permanently-banned member.
+ */
+export async function convertDcToCc(
+  actor: { email: string; name: string },
+  dcAmount: number,
+): Promise<DcConvertResult> {
+  return mutate((draft) => {
+    const me = ensureMemberDraft(draft, actor.email, actor.name);
+    assertNotBanned(me);
+    const x = round2(Number(dcAmount));
+    if (!Number.isFinite(x) || x < config.dc.minConvert) {
+      throw new LedgerError("INVALID", `Convert at least ${config.dc.minConvert} DC.`);
+    }
+    if (x > round2(me.dcBalance)) {
+      throw new LedgerError("INSUFFICIENT_DC", `You only have ${round2(me.dcBalance)} DC.`);
+    }
+    const now = Date.now();
+    const already = dcConvertedToday(draft, me.email, now);
+    if (already + x > config.dc.dailyCapDc) {
+      throw new LedgerError(
+        "DAILY_CAP",
+        `Daily conversion cap is ${config.dc.dailyCapDc} DC — you've already converted ${already} today.`,
+      );
+    }
+    const supply = totalDcSupply(draft);
+    const { cc, perDc, multiplier } = quoteDcToCc(x, supply);
+    if (cc <= 0) {
+      throw new LedgerError("INVALID", "That converts to 0 CC at the moment.");
+    }
+
+    me.dcBalance = round2(me.dcBalance - x); // x <= dcBalance, so never below 0
+    me.balance = round2(me.balance + cc);
+
+    appendTransaction(draft, {
+      type: "CONVERT",
+      currency: "DC",
+      fromEmail: me.email,
+      toEmail: null,
+      amountCC: x,
+      offerId: null,
+      memo: `Converted ${x} DC → ${cc} CC (${perDc}/DC · supply ×${multiplier})`,
+    });
+    appendTransaction(draft, {
+      type: "CONVERT",
+      currency: "CC",
+      fromEmail: null,
+      toEmail: me.email,
+      amountCC: cc,
+      offerId: null,
+      memo: `+${cc} CC from converting ${x} DC`,
+    });
+
+    return {
+      dcSpent: x,
+      ccReceived: cc,
+      perDc,
+      multiplier,
+      dcBalance: me.dcBalance,
+      ccBalance: me.balance,
+      supply: totalDcSupply(draft),
     };
   });
 }

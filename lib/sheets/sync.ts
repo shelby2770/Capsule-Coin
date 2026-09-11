@@ -82,7 +82,7 @@ async function ensureTabs(sheets: sheets_v4.Sheets, titles: string[]) {
 
 type Cell = string | number | boolean | null;
 
-const TAB_ORDER = ["Value", "Members", "Transactions", "Requests"];
+const TAB_ORDER = ["Value", "Members", "Mining", "Transactions", "Requests"];
 
 /**
  * Put our data tabs first and remove the empty default "Sheet1", so anyone
@@ -142,6 +142,9 @@ async function doSync(state: LedgerState): Promise<void> {
     return m ? m.name : email;
   };
   const circulating = state.members.reduce((s, m) => s + Math.max(0, m.balance), 0);
+  const circulatingDc = state.members.reduce((s, m) => s + Math.max(0, m.dcBalance), 0);
+  const standingOf = (m: LedgerState["members"][number]) =>
+    m.banned ? "BANNED" : m.graceUntil ? "GRACE" : "OK";
 
   await ensureTabs(sheets, TAB_ORDER);
   await organizeTabs(sheets);
@@ -153,6 +156,7 @@ async function doSync(state: LedgerState): Promise<void> {
     ["1 CC (USD)", v.usdPerCC],
     ["Balance spread (σ)", v.spread],
     ["Circulating supply (CC)", circulating],
+    ["Circulating DC", circulatingDc],
     ["Transactions", state.transactions.length],
     ["Members joined", state.members.filter((m) => m.verified).length],
     [
@@ -162,7 +166,7 @@ async function doSync(state: LedgerState): Promise<void> {
   ];
 
   const memberRows: Cell[][] = [
-    ["Email", "Name", "Role", "Balance (CC)", "Joined", "Last Mined (UTC+6)"],
+    ["Email", "Name", "Role", "Balance (CC)", "DC", "Joined", "Standing", "Last Mined (UTC+6)"],
     ...[...state.members]
       .sort((a, b) => b.balance - a.balance)
       .map((m): Cell[] => [
@@ -170,23 +174,45 @@ async function doSync(state: LedgerState): Promise<void> {
         m.name,
         m.role,
         m.balance,
+        m.dcBalance,
         m.verified ? "yes" : "no",
+        standingOf(m),
         bdt(m.lastMinedAt),
       ]),
   ];
 
+  // Mining lives in its own tab now (DC rewards). MINE rows are excluded from
+  // Transactions below and projected here instead.
+  const mineRows: Cell[][] = [
+    ["Seq", "Miner", "Amount", "Currency", "Memo", "Created (UTC+6)", "Hash"],
+    ...state.transactions
+      .filter((t) => t.type === "MINE")
+      .map((t): Cell[] => [
+        t.seq,
+        nameOf(t.toEmail),
+        t.amountCC,
+        t.currency,
+        t.memo,
+        bdt(t.createdAt),
+        t.hash,
+      ]),
+  ];
+
   const txRows: Cell[][] = [
-    ["Seq", "Type", "From", "To", "Amount (CC)", "Memo", "Created (UTC+6)", "Hash"],
-    ...state.transactions.map((t): Cell[] => [
-      t.seq,
-      t.type,
-      nameOf(t.fromEmail),
-      nameOf(t.toEmail),
-      t.amountCC,
-      t.memo,
-      bdt(t.createdAt),
-      t.hash,
-    ]),
+    ["Seq", "Type", "Currency", "From", "To", "Amount", "Memo", "Created (UTC+6)", "Hash"],
+    ...state.transactions
+      .filter((t) => t.type !== "MINE")
+      .map((t): Cell[] => [
+        t.seq,
+        t.type,
+        t.currency,
+        nameOf(t.fromEmail),
+        nameOf(t.toEmail),
+        t.amountCC,
+        t.memo,
+        bdt(t.createdAt),
+        t.hash,
+      ]),
   ];
 
   const reqRows: Cell[][] = [
@@ -219,6 +245,7 @@ async function doSync(state: LedgerState): Promise<void> {
       data: [
         { range: "Value!A1", values: valueRows },
         { range: "Members!A1", values: memberRows },
+        { range: "Mining!A1", values: mineRows },
         { range: "Transactions!A1", values: txRows },
         { range: "Requests!A1", values: reqRows },
       ],
