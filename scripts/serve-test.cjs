@@ -8,6 +8,9 @@ const env = {
   ...process.env,
   LEDGER_DOC_ID: "capsule_test",
   GOOGLE_SHEETS_ID: "none", // invalid but non-empty → sheet writes fail harmlessly
+  // Match the post-migration DC supply so DC→CC convert quotes read realistically
+  // (2/10/20 DC → ~1/6/13 CC). Prod sets this as a Vercel env var.
+  DC_REF_SUPPLY: process.env.DC_REF_SUPPLY || "906",
 };
 
 const p = spawn("npx", ["next", "dev", "-p", "2771"], {

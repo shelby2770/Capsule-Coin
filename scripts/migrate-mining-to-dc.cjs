@@ -6,9 +6,13 @@
  *
  * For every member:
  *   - DC start balance = the sum of all CC that mining ever paid them (their MINE rows).
- *   - Their CC is reduced by that amount, but never below the soft floor (BALANCE_FLOOR,
- *     default -500) — any shortfall is FORGIVEN (so nobody is pushed into grace by the
- *     migration itself). Each CC deduction is recorded as an ADJUST transaction.
+ *   - Their CC is reduced by that FULL amount (the mined CC simply becomes DC). CC is
+ *     ALLOWED to fall below the soft floor (-500); it is clamped only at the absolute
+ *     HARD floor (CC_HARD_FLOOR, default -1000), and only a breach of that is forgiven.
+ *     Anyone left below -500 enters the normal 3-day grace on their next login (the
+ *     runtime latches it — see refreshGrace in lib/excel/store.ts), NOT at migration time,
+ *     so the clock starts when they can actually act under the new rules (post-deploy).
+ *     Each CC deduction is recorded as an ADJUST transaction.
  *   - Every historical MINE row is re-labelled currency = "DC" (hash unaffected — currency
  *     is not part of the hash payload), so it moves to the Mining tab and counts against
  *     the DC supply cap.
@@ -30,7 +34,8 @@ admin.initializeApp({ credential: admin.credential.cert(svc), projectId: "capsul
 const db = admin.firestore();
 
 const LEDGER_DOC = process.env.LEDGER_DOC_ID || "state";
-const SOFT_FLOOR = Number(process.env.BALANCE_FLOOR || -500);
+const SOFT_FLOOR = Number(process.env.BALANCE_FLOOR || -500); // grace trigger (reporting only)
+const HARD_FLOOR = Number(process.env.CC_HARD_FLOOR || -1000); // the only clamp we apply
 const round2 = (x) => Math.round((x + Number.EPSILON) * 100) / 100;
 const DRY = process.argv.includes("--dry") || process.argv.includes("--dry-run");
 const FORCE = process.argv.includes("--force");
@@ -87,7 +92,9 @@ function appendTx(state, data) {
     const mined = round2(minedByEmail.get(m.email) || 0);
     if (mined > 0) {
       const oldCc = round2(m.balance || 0);
-      const newCc = Math.max(round2(oldCc - mined), SOFT_FLOOR);
+      // Deduct the full mined amount; CC may go below the soft floor, clamped only at
+      // the absolute hard floor (forgiving just the part below -1000, ~never in practice).
+      const newCc = Math.max(round2(oldCc - mined), HARD_FLOOR);
       const deducted = round2(oldCc - newCc);
       const forgiven = round2(mined - deducted);
       m.dcBalance = round2(m.dcBalance + mined);
@@ -98,7 +105,7 @@ function appendTx(state, data) {
         appendTx(state, {
           type: "ADJUST", currency: "CC", fromEmail: m.email, toEmail: null,
           amountCC: deducted, offerId: null,
-          memo: `DC migration: ${mined} mined CC moved to DC` + (forgiven > 0 ? ` (deducted ${deducted}, ${forgiven} forgiven at ${SOFT_FLOOR} floor)` : ""),
+          memo: `DC migration: ${mined} mined CC moved to DC` + (forgiven > 0 ? ` (deducted ${deducted}, ${forgiven} forgiven at ${HARD_FLOOR} hard floor)` : ""),
         });
       }
     }
@@ -121,7 +128,18 @@ function appendTx(state, data) {
   }
   console.log("\nMINE rows re-labelled to DC: " + relabeled);
   console.log("Total DC in circulation after migration: " + round2(totalDc));
-  console.log("Total CC forgiven at the floor: " + totalForgiven);
+  console.log("Total CC forgiven at the hard floor (" + HARD_FLOOR + "): " + totalForgiven);
+
+  const belowSoft = state.members.filter((m) => round2(m.balance || 0) < SOFT_FLOOR);
+  if (belowSoft.length) {
+    console.log(
+      "\nBelow the soft floor (" + SOFT_FLOOR + ") after migration — a 3-day grace starts on\n" +
+      "their first login post-deploy (mining/buying locked; selling & DC->CC allowed):",
+    );
+    for (const m of belowSoft) console.log("  " + (m.name || m.email) + "\t" + round2(m.balance) + " CC");
+  } else {
+    console.log("\nNobody is below the soft floor (" + SOFT_FLOOR + ") after migration.");
+  }
   console.log("\n>>> Set  DC_REF_SUPPLY=" + Math.max(1, Math.round(totalDc)) + "  (the conversion anchor S0) so your 2/10/20 rates hold at launch.");
 
   if (DRY) {

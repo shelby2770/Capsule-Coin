@@ -748,7 +748,17 @@ const DAY_MS = 24 * 60 * 60 * 1000;
  * cron, so this lazily latches the ban the next time the member is touched.
  */
 function refreshGrace(m: Member, nowMs: number): void {
-  if (m.banned || !m.graceUntil) return;
+  if (m.banned) return;
+  if (!m.graceUntil) {
+    // Below the soft floor with no countdown running yet — start the grace clock.
+    // Normal spends start it via applyGraceAfterSpend (from the post-spend balance);
+    // this catches every OTHER way a member can end up under −500 without a timer:
+    // the one-time DC migration, an admin adjust, or an import. Idempotent.
+    if (m.balance < config.balanceFloor) {
+      m.graceUntil = new Date(nowMs + config.grace.graceDays * DAY_MS).toISOString();
+    }
+    return;
+  }
   if (m.balance >= config.balanceFloor) {
     m.graceUntil = null; // recovered
   } else if (Date.parse(m.graceUntil) <= nowMs) {
@@ -885,12 +895,17 @@ export async function getOrCreateMember(
   // Lazily resolve grace on the member's own page load: recovered -> clear it,
   // deadline passed -> latch the permanent ban. Only forces a write when the
   // state actually needs to change, so the common case stays a cached read.
+  // Grace is out of sync with the balance and a write is needed to latch it when:
+  //  - a countdown is running that should now clear (recovered) or ban (deadline passed), OR
+  //  - no countdown is running but the member is under the soft floor and one must START
+  //    (e.g. placed there by the DC migration or an admin adjust — see refreshGrace).
   const graceNeedsResolve =
     !!existing &&
     !existing.banned &&
-    !!existing.graceUntil &&
-    (existing.balance >= config.balanceFloor ||
-      Date.parse(existing.graceUntil) <= now);
+    (existing.graceUntil
+      ? existing.balance >= config.balanceFloor ||
+        Date.parse(existing.graceUntil) <= now
+      : existing.balance < config.balanceFloor);
   if (
     existing &&
     existing.verified &&
