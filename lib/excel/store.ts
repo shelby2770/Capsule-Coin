@@ -139,6 +139,9 @@ export type LedgerState = {
   offers: Offer[];
   transactions: Transaction[];
   transfers: TransferRequest[];
+  // Capsule Fruit Fund — running total (BDT) from DC bought with real money.
+  // Maintained by the Fruit Minister (config.dc.fruitMinisterEmail).
+  fruitFundBdt: number;
 };
 
 export class LedgerError extends Error {
@@ -164,7 +167,7 @@ const ledgerRef = adminDb
   .doc(process.env.LEDGER_DOC_ID?.trim() || "state");
 
 function emptyState(): LedgerState {
-  return { members: [], offers: [], transactions: [], transfers: [] };
+  return { members: [], offers: [], transactions: [], transfers: [], fruitFundBdt: 0 };
 }
 
 /**
@@ -192,6 +195,10 @@ function normalizeState(s: LedgerState): LedgerState {
     offers: Array.isArray(s.offers) ? s.offers : [],
     transactions,
     transfers: Array.isArray(s.transfers) ? s.transfers : [],
+    fruitFundBdt:
+      typeof s.fruitFundBdt === "number" && Number.isFinite(s.fruitFundBdt)
+        ? s.fruitFundBdt
+        : 0,
   };
 }
 
@@ -907,6 +914,16 @@ export async function getMember(email: string): Promise<Member | null> {
   const lower = email.trim().toLowerCase();
   const s = await ensureLoaded();
   return s.members.find((x) => x.email === lower) ?? null;
+}
+
+/** Mark the first-login DC story as seen (idempotent — set once). */
+export async function markOnboarded(email: string): Promise<{ onboardedAt: string }> {
+  const lower = email.trim().toLowerCase();
+  return mutate((draft) => {
+    const m = ensureMemberDraft(draft, lower, allowlistEntry(lower)?.name || lower);
+    if (!m.onboardedAt) m.onboardedAt = new Date().toISOString();
+    return { onboardedAt: m.onboardedAt };
+  });
 }
 
 export async function listMembers(): Promise<Member[]> {
@@ -1891,6 +1908,97 @@ export async function convertDcToCc(
       dcBalance: me.dcBalance,
       ccBalance: me.balance,
       supply: totalDcSupply(draft),
+    };
+  });
+}
+
+// ── Dark Capsule Coin: buy with real money (Fruit Fund) ─────────────────────
+export type FruitFundStatus = {
+  totalBdt: number;
+  contributions: number;
+  ministerEmail: string;
+};
+
+export async function fruitFundStatus(): Promise<FruitFundStatus> {
+  const s = await ensureLoaded();
+  return {
+    totalBdt: round2(s.fruitFundBdt ?? 0),
+    contributions: s.transactions.filter((t) => t.type === "PURCHASE").length,
+    ministerEmail: config.dc.fruitMinisterEmail,
+  };
+}
+
+/** True for the one member allowed to record real-money DC purchases. */
+export function isFruitMinister(email: string): boolean {
+  return (
+    email.trim().toLowerCase() ===
+    config.dc.fruitMinisterEmail.trim().toLowerCase()
+  );
+}
+
+export type BuyDcResult = {
+  targetEmail: string;
+  dcCredited: number;
+  bdtPaid: number;
+  dcBalance: number;
+  fruitFundBdt: number;
+};
+
+/**
+ * Record a DC purchase made with real money. The cash is handled offline; this
+ * only credits the buyer's DC and tallies the proceeds into the Capsule Fruit
+ * Fund. Restricted to the Fruit Minister (config.dc.fruitMinisterEmail).
+ */
+export async function buyDcWithMoney(
+  actor: { email: string; name: string },
+  input: { targetEmail: string; dcAmount: number; bdtPaid: number; note?: string },
+): Promise<BuyDcResult> {
+  if (!isFruitMinister(actor.email)) {
+    throw new LedgerError(
+      "NOT_ADMIN",
+      "Only the Fruit Minister can record DC purchases.",
+    );
+  }
+  const targetEmail = input.targetEmail.trim().toLowerCase();
+  const dcAmount = round2(Number(input.dcAmount));
+  const bdtPaid = round2(Number(input.bdtPaid));
+  const note = (input.note || "").trim();
+  return mutate((draft) => {
+    if (!isAllowed(targetEmail)) {
+      throw new LedgerError("NOT_MEMBER", "That buyer isn't a Capsule member.");
+    }
+    if (!Number.isFinite(dcAmount) || dcAmount <= 0) {
+      throw new LedgerError("INVALID", "DC amount must be more than 0.");
+    }
+    if (!Number.isFinite(bdtPaid) || bdtPaid < 0) {
+      throw new LedgerError("INVALID", "BDT paid can't be negative.");
+    }
+    const target = ensureMemberDraft(
+      draft,
+      targetEmail,
+      allowlistEntry(targetEmail)?.name || targetEmail,
+    );
+    assertNotBanned(target); // a banned member can't receive DC either
+
+    target.dcBalance = round2(target.dcBalance + dcAmount);
+    draft.fruitFundBdt = round2((draft.fruitFundBdt ?? 0) + bdtPaid);
+
+    appendTransaction(draft, {
+      type: "PURCHASE",
+      currency: "DC",
+      fromEmail: null,
+      toEmail: target.email,
+      amountCC: dcAmount,
+      offerId: null,
+      memo: `Bought ${dcAmount} DC for ৳${bdtPaid} → Fruit Fund${note ? ` — ${note}` : ""}`,
+    });
+
+    return {
+      targetEmail: target.email,
+      dcCredited: dcAmount,
+      bdtPaid,
+      dcBalance: target.dcBalance,
+      fruitFundBdt: draft.fruitFundBdt,
     };
   });
 }

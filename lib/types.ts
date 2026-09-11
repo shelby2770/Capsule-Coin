@@ -15,6 +15,7 @@ export type MemberPublic = {
   createdAt: string;
   graceUntil: string | null; // ISO deadline while below the credit floor, else null
   banned: boolean; // permanent lockout (missed the grace deadline)
+  onboardedAt: string | null; // when they finished the DC intro; null = show story
 };
 
 export type MeResponse =

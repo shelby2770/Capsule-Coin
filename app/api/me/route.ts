@@ -32,6 +32,7 @@ export async function GET(req: Request) {
       createdAt: m.createdAt,
       graceUntil: m.graceUntil,
       banned: m.banned,
+      onboardedAt: m.onboardedAt,
     },
   });
 }
