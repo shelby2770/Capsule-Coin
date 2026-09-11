@@ -13,10 +13,16 @@ const ERROR_STATUS: Record<string, number> = {
   NOT_PARTICIPANT: 403,
   INVALID: 400,
   INSUFFICIENT_FUNDS: 409,
+  INSUFFICIENT_DC: 409,
+  BANNED: 403,
+  GRACE_LOCKED: 409,
 };
 // Outcomes worth echoing back into the chat space (user-actionable).
 const REPLY_ON_ERROR = new Set([
   "INSUFFICIENT_FUNDS",
+  "INSUFFICIENT_DC",
+  "BANNED",
+  "GRACE_LOCKED",
   "NOT_PARTICIPANT",
   "SELF_TRADE",
   "INVALID",
@@ -135,6 +141,18 @@ export async function POST(req: Request) {
     str(body.messageId) || str(body.externalId) || str(src.messageId);
   const rawText = str(body.rawText) || str(src.rawText);
 
+  // Currency routing: Gemini classifies food vs non-food. "DC" for non-food,
+  // "CC" for food. Accepts an explicit `currency`, or an `isFood` boolean; the
+  // safe default is CC (DesertHouse is primarily a food-ordering space).
+  const currency: "CC" | "DC" = (() => {
+    const c = str(src.currency || body.currency).trim().toUpperCase();
+    if (c === "DC") return "DC";
+    if (c === "CC") return "CC";
+    const food = src.isFood ?? body.isFood;
+    if (food === false || str(food).toLowerCase() === "false") return "DC";
+    return "CC";
+  })();
+
   // Not a trade (Gem said so, or too little was parsed to record) → clean no-op,
   // nothing to post back.
   const recordable =
@@ -158,6 +176,7 @@ export async function POST(req: Request) {
       amountCC,
       item,
       authorEmail,
+      currency,
       externalId: messageId || undefined,
       rawText: rawText || undefined,
     });

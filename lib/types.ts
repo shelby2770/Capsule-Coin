@@ -132,6 +132,8 @@ export type MiningStatus = {
   tokensPerSide: number;
   balanceFloor: number;
   resetsAtMs: number; // next daily refill (UTC midnight)
+  standing: "OK" | "GRACE" | "BANNED"; // credit-floor standing
+  graceUntil: string | null; // ISO deadline while in grace, else null
 };
 
 export type MineOutcome = {

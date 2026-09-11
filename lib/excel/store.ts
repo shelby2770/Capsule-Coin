@@ -731,6 +731,90 @@ function assertNotBanned(m: Member): void {
   }
 }
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Resolve a member's credit-floor grace state in place:
+ *   - climbed back to >= the soft floor  -> clear grace
+ *   - grace deadline passed while still under -> permanent ban
+ * Idempotent; call before any action or after any CC credit. Serverless has no
+ * cron, so this lazily latches the ban the next time the member is touched.
+ */
+function refreshGrace(m: Member, nowMs: number): void {
+  if (m.banned || !m.graceUntil) return;
+  if (m.balance >= config.balanceFloor) {
+    m.graceUntil = null; // recovered
+  } else if (Date.parse(m.graceUntil) <= nowMs) {
+    m.banned = true; // missed the deadline
+    m.graceUntil = null;
+  }
+}
+
+/** Non-mutating standing for reads/display. */
+function effectiveStanding(m: Member, nowMs: number): "OK" | "GRACE" | "BANNED" {
+  if (m.banned) return "BANNED";
+  if (m.graceUntil) {
+    if (m.balance >= config.balanceFloor) return "OK";
+    return Date.parse(m.graceUntil) <= nowMs ? "BANNED" : "GRACE";
+  }
+  return "OK";
+}
+
+/** Guard for actions that need a fully-active member (mining) — no grace, no ban. */
+function assertActive(m: Member, nowMs: number): void {
+  refreshGrace(m, nowMs);
+  assertNotBanned(m);
+  if (m.graceUntil) {
+    throw new LedgerError(
+      "GRACE_LOCKED",
+      `You're below the ${config.balanceFloor} CC floor. Sell or convert DC to recover before mining again.`,
+    );
+  }
+}
+
+/**
+ * Guard for a CC outflow of `amount`. Blocks banned/in-grace members and the
+ * absolute hard floor; crossing the SOFT floor is allowed (it starts grace via
+ * applyGraceAfterSpend). Works for any spend: trades, transfers, escrow, fees.
+ */
+function assertCanSpendCc(m: Member, amount: number, nowMs: number): void {
+  refreshGrace(m, nowMs);
+  assertNotBanned(m);
+  if (m.graceUntil) {
+    throw new LedgerError(
+      "GRACE_LOCKED",
+      `You're below the ${config.balanceFloor} CC floor — you can only sell or convert DC until you recover. Spending is locked.`,
+    );
+  }
+  if (round2(m.balance - amount) < config.grace.hardFloor) {
+    throw new LedgerError(
+      "INSUFFICIENT_FUNDS",
+      `That would drop you below the ${config.grace.hardFloor} CC hard floor.`,
+    );
+  }
+}
+
+/** Guard for a member who is buying (DC or CC) — blocked while banned/in grace. */
+function assertCanBuy(m: Member, nowMs: number): void {
+  refreshGrace(m, nowMs);
+  assertNotBanned(m);
+  if (m.graceUntil) {
+    throw new LedgerError(
+      "GRACE_LOCKED",
+      `You're below the ${config.balanceFloor} CC floor — recover (sell or convert DC) before buying.`,
+    );
+  }
+}
+
+/** After a CC outflow, start the grace countdown if the member just crossed the
+ *  soft floor and isn't already in grace/banned. */
+function applyGraceAfterSpend(m: Member, nowMs: number): void {
+  if (m.banned || m.graceUntil) return;
+  if (m.balance < config.balanceFloor) {
+    m.graceUntil = new Date(nowMs + config.grace.graceDays * DAY_MS).toISOString();
+  }
+}
+
 function appendTransaction(
   draft: LedgerState,
   data: {
@@ -790,7 +874,22 @@ export async function getOrCreateMember(
   // awaited Google Sheet mirror sync) takes a full ledger write off the hot path —
   // the common case becomes a single cached read.
   const existing = (await ensureLoaded()).members.find((x) => x.email === lower);
-  if (existing && existing.verified && existing.role === role) {
+  const now = Date.now();
+  // Lazily resolve grace on the member's own page load: recovered -> clear it,
+  // deadline passed -> latch the permanent ban. Only forces a write when the
+  // state actually needs to change, so the common case stays a cached read.
+  const graceNeedsResolve =
+    !!existing &&
+    !existing.banned &&
+    !!existing.graceUntil &&
+    (existing.balance >= config.balanceFloor ||
+      Date.parse(existing.graceUntil) <= now);
+  if (
+    existing &&
+    existing.verified &&
+    existing.role === role &&
+    !graceNeedsResolve
+  ) {
     return structuredClone(existing);
   }
   return mutate((draft) => {
@@ -799,6 +898,7 @@ export async function getOrCreateMember(
     // Reaching /api/me means the email was verified and the app was entered.
     m.verified = true;
     m.role = role;
+    refreshGrace(m, Date.now());
     return { ...m };
   });
 }
@@ -839,13 +939,10 @@ export async function createOffer(
 
     let escrowAmount = 0;
     if (input.type === "BUY") {
-      if (me.balance - price < config.balanceFloor) {
-        throw new LedgerError(
-          "INSUFFICIENT_FUNDS",
-          `Escrowing that would drop you below the ${config.balanceFloor} CC floor.`,
-        );
-      }
-      me.balance -= price;
+      const now = Date.now();
+      assertCanSpendCc(me, price, now); // buying is locked while banned / in grace
+      me.balance = round2(me.balance - price);
+      applyGraceAfterSpend(me, now);
       escrowAmount = price;
     }
 
@@ -903,7 +1000,8 @@ export async function cancelOffer(
       const me = draft.members.find((m) => m.email === email);
       const refund = offer.escrowAmount;
       if (me) {
-        me.balance += refund;
+        me.balance = round2(me.balance + refund);
+        refreshGrace(me, Date.now()); // refund may lift them out of grace
         balance = me.balance;
       }
       appendTransaction(draft, {
@@ -941,16 +1039,16 @@ export async function acceptOffer(
     const price = offer.priceCC;
     const creator = draft.members.find((m) => m.email === offer.creatorEmail);
 
+    const now = Date.now();
     if (offer.type === "SELL") {
       // actor is the buyer, pays the seller
-      if (me.balance - price < config.balanceFloor) {
-        throw new LedgerError(
-          "INSUFFICIENT_FUNDS",
-          `That would drop you below the ${config.balanceFloor} CC floor.`,
-        );
+      assertCanSpendCc(me, price, now); // locked while banned / in grace
+      me.balance = round2(me.balance - price);
+      applyGraceAfterSpend(me, now);
+      if (creator) {
+        creator.balance = round2(creator.balance + price);
+        refreshGrace(creator, now);
       }
-      me.balance -= price;
-      if (creator) creator.balance += price;
       appendTransaction(draft, {
         type: "TRADE",
         fromEmail: me.email,
@@ -960,8 +1058,11 @@ export async function acceptOffer(
         memo: `Bought "${offer.itemName}"`,
       });
     } else {
-      // BUY: actor fulfills the request and receives the escrowed CC
-      me.balance += price;
+      // BUY: actor fulfills the request and receives the escrowed CC (a sale —
+      // allowed in grace, blocked only if permanently banned).
+      assertNotBanned(me);
+      me.balance = round2(me.balance + price);
+      refreshGrace(me, now);
       appendTransaction(draft, {
         type: "TRADE",
         fromEmail: offer.creatorEmail,
@@ -1028,10 +1129,13 @@ export async function expireStaleTransfers(now = Date.now()): Promise<number> {
 
 /** Move CC from payer to payee and append the TRANSFER transaction. */
 function settleTransfer(draft: LedgerState, t: TransferRequest): Transaction {
+  const now = Date.now();
   const payer = ensureMemberDraft(draft, t.fromEmail, t.fromName);
   const payee = ensureMemberDraft(draft, t.toEmail, t.toName);
   payer.balance = round2(payer.balance - t.amountCC);
   payee.balance = round2(payee.balance + t.amountCC);
+  applyGraceAfterSpend(payer, now); // may cross into grace
+  refreshGrace(payee, now); // credit may lift the payee out of grace
   return appendTransaction(draft, {
     type: "TRANSFER",
     fromEmail: payer.email,
@@ -1093,11 +1197,7 @@ export async function createTransfer(
 
     if (input.direction === "SEND") {
       // Payer is the initiator → consent is implicit → settle immediately.
-      if (payer.balance - amount < config.balanceFloor)
-        throw new LedgerError(
-          "INSUFFICIENT_FUNDS",
-          `Not enough CC — that would drop you below the ${config.balanceFloor} CC floor.`,
-        );
+      assertCanSpendCc(payer, amount, Date.now()); // locked while banned / in grace
       const tx = settleTransfer(draft, transfer);
       transfer.status = "APPROVED";
       transfer.resolvedAt = new Date().toISOString();
@@ -1125,11 +1225,7 @@ export async function approveTransfer(
     if (t.fromEmail !== email)
       throw new LedgerError("NOT_PAYER", "Only the payer can approve this.");
     const payer = ensureMemberDraft(draft, t.fromEmail, t.fromName);
-    if (payer.balance - t.amountCC < config.balanceFloor)
-      throw new LedgerError(
-        "INSUFFICIENT_FUNDS",
-        `Not enough CC — approving would drop you below the ${config.balanceFloor} CC floor.`,
-      );
+    assertCanSpendCc(payer, t.amountCC, Date.now()); // locked while banned / in grace
     const tx = settleTransfer(draft, t);
     t.status = "APPROVED";
     t.resolvedAt = new Date().toISOString();
@@ -1205,8 +1301,9 @@ export type DesertHouseTradeResult = {
   txId: string | null;
   amountCC: number;
   item: string;
-  seller: { email: string; name: string; balance: number };
-  buyer: { email: string; name: string; balance: number };
+  currency: Currency; // "CC" (food) or "DC" (non-food)
+  seller: { email: string; name: string; balance: number; dcBalance: number };
+  buyer: { email: string; name: string; balance: number; dcBalance: number };
   message: string; // human line the flow can echo back into the space
 };
 
@@ -1222,11 +1319,12 @@ export type DesertHouseTradeResult = {
  * or re-delivered message can never double-charge.
  */
 export async function recordDesertHouseTrade(input: {
-  sellerEmail: string; // receives CC
-  buyerEmail: string; // pays CC
-  amountCC: number;
+  sellerEmail: string; // receives the coin
+  buyerEmail: string; // pays the coin
+  amountCC: number; // amount, in `currency` units
   item: string;
   authorEmail: string; // Chat message author — must be the buyer or seller
+  currency?: Currency; // "CC" for food, "DC" for non-food (Gemini-classified). Default CC.
   externalId?: string; // Chat message id, for idempotency
   rawText?: string; // original message text (audit only)
 }): Promise<DesertHouseTradeResult> {
@@ -1236,6 +1334,7 @@ export async function recordDesertHouseTrade(input: {
   const item = (input.item || "").trim();
   const amount = round2(Number(input.amountCC));
   const externalId = (input.externalId || "").trim();
+  const cur: Currency = input.currency === "DC" ? "DC" : "CC";
 
   return mutate((draft): DesertHouseTradeResult => {
     // ── Validate ──────────────────────────────────────────────────────────
@@ -1289,26 +1388,40 @@ export async function recordDesertHouseTrade(input: {
           txId: prior.id,
           amountCC: prior.amountCC,
           item: prior.memo,
-          seller: { email: seller.email, name: seller.name, balance: seller.balance },
-          buyer: { email: buyer.email, name: buyer.name, balance: buyer.balance },
-          message: `Already recorded — no change. (${seller.name} ${seller.balance} CC, ${buyer.name} ${buyer.balance} CC)`,
+          currency: prior.currency,
+          seller: { email: seller.email, name: seller.name, balance: seller.balance, dcBalance: seller.dcBalance },
+          buyer: { email: buyer.email, name: buyer.name, balance: buyer.balance, dcBalance: buyer.dcBalance },
+          message: `Already recorded — no change.`,
         };
       }
     }
 
-    // ── Floor check on the payer (buyer) ──────────────────────────────────
-    if (buyer.balance - amount < config.balanceFloor) {
-      throw new LedgerError(
-        "INSUFFICIENT_FUNDS",
-        `${buyer.name} would drop below the ${config.balanceFloor} CC floor.`,
-      );
+    // ── Settle: buyer pays, seller receives (in the trade's currency) ─────
+    const now = Date.now();
+    assertNotBanned(seller); // a banned member can't transact at all
+    if (cur === "DC") {
+      assertCanBuy(buyer, now); // buying is locked while banned / in grace
+      // DC has no credit line — the buyer must actually hold the DC.
+      if (round2(buyer.dcBalance) < amount) {
+        throw new LedgerError(
+          "INSUFFICIENT_DC",
+          `${buyer.name} only has ${round2(buyer.dcBalance)} DC (need ${amount}).`,
+        );
+      }
+      buyer.dcBalance = round2(buyer.dcBalance - amount);
+      seller.dcBalance = round2(seller.dcBalance + amount);
+    } else {
+      // CC food trade. Crossing the soft floor is allowed (it starts grace);
+      // only the hard floor is a wall, and grace/ban block spending entirely.
+      assertCanSpendCc(buyer, amount, now);
+      buyer.balance = round2(buyer.balance - amount);
+      seller.balance = round2(seller.balance + amount);
+      applyGraceAfterSpend(buyer, now);
     }
-
-    // ── Settle: buyer pays, seller receives (a real TRANSFER) ─────────────
-    buyer.balance = round2(buyer.balance - amount);
-    seller.balance = round2(seller.balance + amount);
+    refreshGrace(seller, now); // a CC credit may lift the seller out of grace
     const tx = appendTransaction(draft, {
       type: "TRANSFER",
+      currency: cur,
       fromEmail: buyer.email,
       toEmail: seller.email,
       amountCC: amount,
@@ -1317,15 +1430,18 @@ export async function recordDesertHouseTrade(input: {
       externalId: externalId || null,
     });
 
+    const bal = (m: Member) =>
+      cur === "DC" ? `${m.dcBalance} DC` : `${m.balance} CC`;
     return {
       recorded: true,
       duplicate: false,
       txId: tx.id,
       amountCC: amount,
       item,
-      seller: { email: seller.email, name: seller.name, balance: seller.balance },
-      buyer: { email: buyer.email, name: buyer.name, balance: buyer.balance },
-      message: `✅ Recorded: ${item} — ${seller.name} +${amount} CC, ${buyer.name} -${amount} CC. New balances: ${seller.name} ${seller.balance}, ${buyer.name} ${buyer.balance}.`,
+      currency: cur,
+      seller: { email: seller.email, name: seller.name, balance: seller.balance, dcBalance: seller.dcBalance },
+      buyer: { email: buyer.email, name: buyer.name, balance: buyer.balance, dcBalance: buyer.dcBalance },
+      message: `✅ Recorded (${cur}): ${item} — ${seller.name} +${amount} ${cur}, ${buyer.name} -${amount} ${cur}. New balances: ${seller.name} ${bal(seller)}, ${buyer.name} ${bal(buyer)}.`,
     };
   });
 }
@@ -1477,6 +1593,7 @@ export async function mineStatus(email: string): Promise<MiningStatus> {
   const reserve = reserveRemaining(s);
   const freeRemaining = Math.max(0, config.mining.freePerDay - m.freeMinesUsed);
   const hasAttempt = freeRemaining > 0 || m.paidRemaining > 0;
+  const standing = effectiveStanding(m, now);
 
   return {
     freeRemaining,
@@ -1484,7 +1601,7 @@ export async function mineStatus(email: string): Promise<MiningStatus> {
     paidRemaining: m.paidRemaining,
     tier: m.paidTier,
     nextTier: nextTierFor(m),
-    canMine: hasAttempt && reserve > 0,
+    canMine: hasAttempt && reserve > 0 && standing === "OK",
     balance: round2(m.balance),
     dcBalance: round2(m.dcBalance),
     reserveRemaining: reserve,
@@ -1493,6 +1610,8 @@ export async function mineStatus(email: string): Promise<MiningStatus> {
     tokensPerSide: config.mining.tokensPerSide,
     balanceFloor: config.balanceFloor,
     resetsAtMs: nextResetMs(now),
+    standing,
+    graceUntil: m.graceUntil,
   };
 }
 
@@ -1504,6 +1623,7 @@ export async function mine(actor: {
     const me = ensureMemberDraft(draft, actor.email, actor.name);
     const now = Date.now();
     applyDailyReset(me, now);
+    assertActive(me, now); // no mining while banned / in credit-floor grace
 
     const freeLeft = config.mining.freePerDay - me.freeMinesUsed;
     const paid = freeLeft <= 0;
@@ -1578,6 +1698,7 @@ export async function buyMiningPack(actor: {
     const me = ensureMemberDraft(draft, actor.email, actor.name);
     const now = Date.now();
     applyDailyReset(me, now);
+    assertActive(me, now); // no pack purchases while banned / in credit-floor grace
 
     if (config.mining.freePerDay - me.freeMinesUsed > 0) {
       throw new LedgerError("FREE_LEFT", "Use your free mines first.");
@@ -1741,6 +1862,7 @@ export async function convertDcToCc(
 
     me.dcBalance = round2(me.dcBalance - x); // x <= dcBalance, so never below 0
     me.balance = round2(me.balance + cc);
+    refreshGrace(me, now); // converting to CC can lift you out of grace
 
     appendTransaction(draft, {
       type: "CONVERT",
