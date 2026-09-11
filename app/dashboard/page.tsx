@@ -210,7 +210,7 @@ function WalletHome() {
         </div>
       </section>
 
-      {balance <= BALANCE_WARN && (
+      {balance <= BALANCE_WARN && !member?.graceUntil && !member?.banned && (
         <div className="flex items-center gap-3 rounded-[20px] border border-red-500/40 bg-red-500/10 p-4 text-sm text-red-200">
           <AlertTriangle size={18} className="shrink-0 text-red-300" />
           <span>
