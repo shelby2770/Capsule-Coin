@@ -19,6 +19,8 @@ import {
   RotateCcw,
   Sparkles,
   Flame,
+  Repeat,
+  Banknote,
   ExternalLink,
   Search,
   X,
@@ -46,6 +48,8 @@ const TX_ICON: Record<
   ESCROW_REFUND: RotateCcw,
   ADJUST: Sparkles,
   BURN: Flame,
+  CONVERT: Repeat,
+  PURCHASE: Banknote,
 };
 
 const TYPE_FILTERS: {

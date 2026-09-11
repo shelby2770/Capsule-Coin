@@ -28,3 +28,21 @@ export function formatCC(n: number): string {
         maximumFractionDigits: 2,
       });
 }
+
+/** Dark Capsule Coin ticker + emoji used across DC surfaces. */
+export const DC_TICKER = "DC";
+export const DC_EMOJI = "🔥";
+
+/**
+ * Format a DC amount for display. Same 2-decimal rule as CC, but DC can never be
+ * negative (enforced in the store), so a stray negative renders as 0.
+ */
+export function formatDC(n: number): string {
+  const r = round2(Math.max(0, n));
+  return Number.isInteger(r)
+    ? r.toLocaleString()
+    : r.toLocaleString(undefined, {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      });
+}

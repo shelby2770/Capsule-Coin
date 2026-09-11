@@ -21,6 +21,7 @@ export async function GET(req: Request) {
   const transactions: LedgerTx[] = recent.map((t) => ({
     seq: t.seq,
     type: t.type,
+    currency: t.currency,
     fromName: nameOf(t.fromEmail),
     toName: nameOf(t.toEmail),
     amountCC: t.amountCC,

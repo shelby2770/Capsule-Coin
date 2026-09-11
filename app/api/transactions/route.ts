@@ -17,6 +17,7 @@ export async function GET(req: Request) {
     seq: t.seq,
     id: t.id,
     type: t.type,
+    currency: t.currency,
     fromEmail: t.fromEmail,
     toEmail: t.toEmail,
     amountCC: t.amountCC,

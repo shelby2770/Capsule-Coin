@@ -29,6 +29,8 @@ import {
   RotateCcw,
   Sparkles,
   Flame,
+  Repeat,
+  Banknote,
   AlertTriangle,
 } from "lucide-react";
 
@@ -123,6 +125,8 @@ const TX_ICON: Record<
   ESCROW_REFUND: RotateCcw,
   ADJUST: Sparkles,
   BURN: Flame,
+  CONVERT: Repeat,
+  PURCHASE: Banknote,
 };
 
 function ActivityRow({ tx, email }: { tx: TransactionPublic; email: string }) {

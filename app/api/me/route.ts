@@ -25,10 +25,13 @@ export async function GET(req: Request) {
       email: m.email,
       name: m.name,
       balance: m.balance,
+      dcBalance: m.dcBalance,
       role: m.role,
       verified: m.verified,
       lastMinedAt: m.lastMinedAt,
       createdAt: m.createdAt,
+      graceUntil: m.graceUntil,
+      banned: m.banned,
     },
   });
 }

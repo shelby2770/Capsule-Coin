@@ -32,7 +32,8 @@ import type {
 export type Member = {
   email: string;
   name: string;
-  balance: number;
+  balance: number; // CC wallet (may go negative down to the credit floor)
+  dcBalance: number; // Dark Capsule Coin wallet — mined/bought; never negative
   verified: boolean;
   role: string;
   lastMinedAt: string | null; // ISO
@@ -42,6 +43,12 @@ export type Member = {
   freeMinesUsed: number; // free mines used today
   paidTier: number; // pay-to-mine packs unlocked today (0..ladder.length)
   paidRemaining: number; // paid attempts left from the last unlocked pack
+  // Credit-floor grace / ban state (config.grace). When CC crosses below the soft
+  // floor, graceUntil is set to the ISO deadline; miss it and `banned` latches on.
+  graceUntil: string | null;
+  banned: boolean;
+  // First-login story mode: ISO time the member finished the DC intro (null = pending).
+  onboardedAt: string | null;
 };
 
 export type OfferType = "SELL" | "BUY";
@@ -99,12 +106,20 @@ export type TxType =
   | "ESCROW_LOCK"
   | "ESCROW_REFUND"
   | "ADJUST"
-  | "BURN";
+  | "BURN"
+  | "CONVERT" // a DC<->CC conversion leg (one DC-out row + one CC-in row)
+  | "PURCHASE"; // DC bought with real money (credited by an admin)
+
+/** Which coin a transaction moved. Legacy rows (pre-DC) default to "CC". */
+export type Currency = "CC" | "DC";
 
 export type Transaction = {
   seq: number;
   id: string;
   type: TxType;
+  // Unit of `amountCC` below: "CC" or "DC". NOT part of the hash payload (an
+  // additive annotation, like externalId), so all existing hashes stay valid.
+  currency: Currency;
   fromEmail: string | null;
   toEmail: string | null;
   amountCC: number;
@@ -152,10 +167,38 @@ function emptyState(): LedgerState {
   return { members: [], offers: [], transactions: [], transfers: [] };
 }
 
+/**
+ * Fill in fields added after some rows were already persisted, so old Firestore
+ * documents (written before DC / grace / onboarding existed) load cleanly. Runs
+ * on every read AND inside mutate()'s transaction, so drafts always carry them.
+ */
+function normalizeState(s: LedgerState): LedgerState {
+  if (!s || typeof s !== "object") return emptyState();
+  const members = Array.isArray(s.members) ? s.members : [];
+  const transactions = Array.isArray(s.transactions) ? s.transactions : [];
+  for (const m of members) {
+    if (typeof m.dcBalance !== "number" || !Number.isFinite(m.dcBalance)) {
+      m.dcBalance = 0;
+    }
+    if (m.graceUntil === undefined) m.graceUntil = null;
+    if (typeof m.banned !== "boolean") m.banned = false;
+    if (m.onboardedAt === undefined) m.onboardedAt = null;
+  }
+  for (const t of transactions) {
+    if (t.currency !== "DC") t.currency = "CC";
+  }
+  return {
+    members,
+    offers: Array.isArray(s.offers) ? s.offers : [],
+    transactions,
+    transfers: Array.isArray(s.transfers) ? s.transfers : [],
+  };
+}
+
 function parseState(json: unknown): LedgerState {
   if (typeof json !== "string") return emptyState();
   try {
-    return JSON.parse(json) as LedgerState;
+    return normalizeState(JSON.parse(json) as LedgerState);
   } catch {
     return emptyState();
   }
@@ -201,6 +244,10 @@ const MEMBER_HEADERS = [
   "Free Mines Used",
   "Paid Tier",
   "Paid Attempts Left",
+  "DC Balance",
+  "Grace Until (UTC)",
+  "Banned",
+  "Onboarded At (UTC)",
 ];
 const OFFER_HEADERS = [
   "ID",
@@ -230,6 +277,7 @@ const TX_HEADERS = [
   "Created (UTC)",
   "Prev Hash",
   "Hash",
+  "Currency",
 ];
 const REQUEST_HEADERS = [
   "ID",
@@ -268,6 +316,10 @@ function parseMembers(wb: ExcelJS.Workbook): Member[] {
       freeMinesUsed: toNum(rawCell(row, 9)),
       paidTier: toNum(rawCell(row, 10)),
       paidRemaining: toNum(rawCell(row, 11)),
+      dcBalance: toNum(rawCell(row, 12)),
+      graceUntil: toStrOrNull(rawCell(row, 13)),
+      banned: toBool(rawCell(row, 14)),
+      onboardedAt: toStrOrNull(rawCell(row, 15)),
     });
   });
   return out;
@@ -313,6 +365,7 @@ function parseTransactions(wb: ExcelJS.Workbook): Transaction[] {
       seq: toNum(rawCell(row, 1)),
       id,
       type: (toStr(rawCell(row, 3)).trim().toUpperCase() as TxType) || "TRADE",
+      currency: toStr(rawCell(row, 12)).trim().toUpperCase() === "DC" ? "DC" : "CC",
       fromEmail: toStrOrNull(rawCell(row, 4))?.toLowerCase() ?? null,
       toEmail: toStrOrNull(rawCell(row, 5))?.toLowerCase() ?? null,
       amountCC: toNum(rawCell(row, 6)),
@@ -467,7 +520,7 @@ async function buildWorkbook(next: LedgerState): Promise<ExcelJS.Workbook> {
   // Members
   const ms = wb.addWorksheet("Members", { views: [{ state: "frozen", ySplit: 1 }] });
   ms.addRow(MEMBER_HEADERS);
-  [34, 26, 16, 12, 10, 26, 26, 14, 16, 10, 18].forEach(
+  [34, 26, 16, 12, 10, 26, 26, 14, 16, 10, 18, 14, 26, 10, 26].forEach(
     (w, i) => (ms.getColumn(i + 1).width = w),
   );
   for (const m of next.members) {
@@ -483,6 +536,10 @@ async function buildWorkbook(next: LedgerState): Promise<ExcelJS.Workbook> {
       m.freeMinesUsed ?? 0,
       m.paidTier ?? 0,
       m.paidRemaining ?? 0,
+      m.dcBalance ?? 0,
+      m.graceUntil ?? "",
+      m.banned ?? false,
+      m.onboardedAt ?? "",
     ]);
   }
   styleHeader(ms);
@@ -518,7 +575,7 @@ async function buildWorkbook(next: LedgerState): Promise<ExcelJS.Workbook> {
     views: [{ state: "frozen", ySplit: 1 }],
   });
   ts.addRow(TX_HEADERS);
-  [8, 38, 14, 30, 30, 14, 38, 44, 26, 20, 20].forEach(
+  [8, 38, 14, 30, 30, 14, 38, 44, 26, 20, 20, 10].forEach(
     (w, i) => (ts.getColumn(i + 1).width = w),
   );
   for (const t of next.transactions) {
@@ -534,6 +591,7 @@ async function buildWorkbook(next: LedgerState): Promise<ExcelJS.Workbook> {
       t.createdAt,
       t.prevHash,
       t.hash,
+      t.currency,
     ]);
   }
   styleHeader(ts);
@@ -642,6 +700,7 @@ function ensureMemberDraft(
       email: lower,
       name: name || lower,
       balance: 0,
+      dcBalance: 0,
       // A member record can exist without its owner having signed in yet
       // (seeded balance, or a transfer counterparty). "verified" flips to true
       // only when they actually reach the app (getOrCreateMember via /api/me).
@@ -653,6 +712,9 @@ function ensureMemberDraft(
       freeMinesUsed: 0,
       paidTier: 0,
       paidRemaining: 0,
+      graceUntil: null,
+      banned: false,
+      onboardedAt: null,
     };
     draft.members.push(m);
   }
@@ -663,6 +725,7 @@ function appendTransaction(
   draft: LedgerState,
   data: {
     type: TxType;
+    currency?: Currency; // defaults to "CC" when omitted
     fromEmail: string | null;
     toEmail: string | null;
     amountCC: number;
@@ -692,7 +755,15 @@ function appendTransaction(
   const hash = createHash("sha256")
     .update(`${prevHash}|${payload}`)
     .digest("hex");
-  const tx: Transaction = { seq, id, ...data, createdAt, prevHash, hash };
+  const tx: Transaction = {
+    seq,
+    id,
+    ...data,
+    currency: data.currency ?? "CC",
+    createdAt,
+    prevHash,
+    hash,
+  };
   draft.transactions.push(tx);
   return tx;
 }
@@ -1277,13 +1348,19 @@ function applyDailyReset(m: Member, nowMs: number): void {
  * total mined − burned can never exceed supplyCap. This bounds inflation.
  */
 function reserveRemaining(s: LedgerState): number {
-  let mined = 0;
-  let burned = 0;
+  // Mining now mints DC. The fixed supplyCap bounds net mined DC in circulation;
+  // converting DC->CC destroys DC and reopens that headroom (the DC-native analog
+  // of the old fee-recycling), so an active economy keeps mining alive. Paid-mining
+  // CC BURNs no longer refill the reserve — they're a different currency now.
+  let minedDc = 0;
+  let convertedDc = 0;
   for (const tx of s.transactions) {
-    if (tx.type === "MINE") mined += tx.amountCC;
-    else if (tx.type === "BURN") burned += tx.amountCC;
+    if (tx.currency !== "DC") continue;
+    if (tx.type === "MINE") minedDc += tx.amountCC;
+    else if (tx.type === "CONVERT") convertedDc += tx.amountCC;
   }
-  return round2(config.mining.supplyCap - (mined - burned));
+  const used = Math.max(0, minedDc - convertedDc);
+  return round2(config.mining.supplyCap - used);
 }
 
 /**
@@ -1372,6 +1449,7 @@ export async function mineStatus(email: string): Promise<MiningStatus> {
         email: lower,
         name: lower,
         balance: 0,
+        dcBalance: 0,
         verified: true,
         role: roleFor(lower),
         lastMinedAt: null,
@@ -1380,6 +1458,9 @@ export async function mineStatus(email: string): Promise<MiningStatus> {
         freeMinesUsed: 0,
         paidTier: 0,
         paidRemaining: 0,
+        graceUntil: null,
+        banned: false,
+        onboardedAt: null,
       };
   applyDailyReset(m, now);
 
@@ -1395,6 +1476,7 @@ export async function mineStatus(email: string): Promise<MiningStatus> {
     nextTier: nextTierFor(m),
     canMine: hasAttempt && reserve > 0,
     balance: round2(m.balance),
+    dcBalance: round2(m.dcBalance),
     reserveRemaining: reserve,
     supplyCap: config.mining.supplyCap,
     rewardCap: config.mining.rewardCap,
@@ -1448,16 +1530,17 @@ export async function mine(actor: {
     if (paid) me.paidRemaining -= 1;
     else me.freeMinesUsed += 1;
 
-    me.balance = round2(me.balance + reward);
+    me.dcBalance = round2(me.dcBalance + reward);
     me.lastMinedAt = new Date(now).toISOString();
 
     appendTransaction(draft, {
       type: "MINE",
+      currency: "DC",
       fromEmail: null,
       toEmail: me.email,
       amountCC: reward,
       offerId: null,
-      memo: `Mined ${reward} CC — ${matches} match${matches === 1 ? "" : "es"}${
+      memo: `Mined ${reward} DC — ${matches} match${matches === 1 ? "" : "es"}${
         paid ? " (boosted)" : ""
       }`,
     });
@@ -1468,6 +1551,7 @@ export async function mine(actor: {
       boosted: paid,
       capped: hitCap && reward >= config.mining.rewardCap,
       balance: me.balance,
+      dcBalance: me.dcBalance,
       freeRemaining: Math.max(0, config.mining.freePerDay - me.freeMinesUsed),
       paidRemaining: me.paidRemaining,
       reserveRemaining: round2(reserve - reward),

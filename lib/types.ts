@@ -1,14 +1,20 @@
 /**
  * Client-safe shared types (no secrets, safe to import anywhere).
  */
+/** Which coin an amount is in. */
+export type Currency = "CC" | "DC";
+
 export type MemberPublic = {
   email: string;
   name: string;
-  balance: number;
+  balance: number; // CC wallet
+  dcBalance: number; // Dark Capsule Coin wallet (never negative)
   role: string;
   verified: boolean;
   lastMinedAt: string | null;
   createdAt: string;
+  graceUntil: string | null; // ISO deadline while below the credit floor, else null
+  banned: boolean; // permanent lockout (missed the grace deadline)
 };
 
 export type MeResponse =
@@ -97,7 +103,10 @@ export type TransactionPublic = {
     | "ESCROW_LOCK"
     | "ESCROW_REFUND"
     | "ADJUST"
-    | "BURN";
+    | "BURN"
+    | "CONVERT"
+    | "PURCHASE";
+  currency: Currency;
   fromEmail: string | null;
   toEmail: string | null;
   amountCC: number;
@@ -115,8 +124,9 @@ export type MiningStatus = {
   tier: number; // how many pay-to-mine packs unlocked today (0..ladder.length)
   nextTier: MiningTier | null; // next purchasable pack, or null when maxed out
   canMine: boolean; // has an attempt AND the reserve isn't empty
-  balance: number;
-  reserveRemaining: number; // net CC still mintable before the supply cap
+  balance: number; // CC wallet
+  dcBalance: number; // DC wallet (mining pays into this)
+  reserveRemaining: number; // net DC still mintable before the supply cap
   supplyCap: number;
   rewardCap: number;
   tokensPerSide: number;
@@ -125,11 +135,12 @@ export type MiningStatus = {
 };
 
 export type MineOutcome = {
-  reward: number;
+  reward: number; // DC minted this attempt
   matches: number;
   boosted: boolean; // paid (richer keyspace) attempt
   capped: boolean; // hit the per-mine reward cap
-  balance: number;
+  balance: number; // CC wallet (unchanged by mining)
+  dcBalance: number; // DC wallet after this mine
   freeRemaining: number;
   paidRemaining: number;
   reserveRemaining: number;
@@ -156,7 +167,10 @@ export type LedgerTx = {
     | "ESCROW_LOCK"
     | "ESCROW_REFUND"
     | "ADJUST"
-    | "BURN";
+    | "BURN"
+    | "CONVERT"
+    | "PURCHASE";
+  currency: Currency;
   fromName: string | null;
   toName: string | null;
   amountCC: number;
