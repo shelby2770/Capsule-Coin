@@ -12,8 +12,8 @@ import {
   Inbox,
 } from "lucide-react";
 import { useAuth } from "@/components/AuthProvider";
-import { LEDGER_EVENT } from "@/lib/ledgerEvents";
-import { formatCC, BALANCE_WARN } from "@/lib/format";
+import { useTransactions } from "@/lib/useTransactions";
+import { formatCC, formatDC, BALANCE_WARN } from "@/lib/format";
 import type { TransactionPublic, TransfersResponse } from "@/lib/types";
 
 /** Emails are firstname.lastname@… — derive a display name without an extra fetch. */
@@ -50,23 +50,12 @@ export function NotificationsBell({
 }: {
   transfers: TransfersResponse | null;
 }) {
-  const { member, authedFetch, status } = useAuth();
+  const { member } = useAuth();
+  // Recent transactions come from the shared /api/bootstrap payload (no extra fetch).
+  const { transactions } = useTransactions();
+  const txs = transactions ?? [];
   const [open, setOpen] = useState(false);
-  const [txs, setTxs] = useState<TransactionPublic[]>([]);
   const ref = useRef<HTMLDivElement>(null);
-
-  // My recent transactions (refreshes on any ledger change).
-  useEffect(() => {
-    if (status !== "member") return;
-    const load = () =>
-      authedFetch("/api/transactions")
-        .then((r) => (r.ok ? r.json() : { transactions: [] }))
-        .then((d) => setTxs(d.transactions ?? []))
-        .catch(() => {});
-    void load();
-    window.addEventListener(LEDGER_EVENT, load);
-    return () => window.removeEventListener(LEDGER_EVENT, load);
-  }, [status, authedFetch]);
 
   // Close on outside click / Escape.
   useEffect(() => {
@@ -93,15 +82,18 @@ export function NotificationsBell({
     .sort((a, b) => b.seq - a.seq)
     .slice(0, 8);
 
+  const amt = (t: TransactionPublic) =>
+    t.currency === "DC" ? `${formatDC(t.amountCC)} DC` : `${formatCC(t.amountCC)} CC`;
+
   function describe(t: TransactionPublic) {
     const memo = t.memo ? ` · ${t.memo}` : "";
     if (t.type === "MINE")
-      return { Icon: Pickaxe, tone: "text-teal-300", text: `Mined ${formatCC(t.amountCC)} CC${memo}` };
+      return { Icon: Pickaxe, tone: "text-ember-300", text: `Mined ${amt(t)}${memo}` };
     if (t.type === "BURN")
       return { Icon: Flame, tone: "text-orange-300", text: `Burned ${formatCC(t.amountCC)} CC to unlock mining` };
     if (t.toEmail === me)
-      return { Icon: ArrowDownLeft, tone: "text-teal-300", text: `Received ${formatCC(t.amountCC)} CC from ${niceName(t.fromEmail)}${memo}` };
-    return { Icon: ArrowUpRight, tone: "text-gold-300", text: `Sent ${formatCC(t.amountCC)} CC to ${niceName(t.toEmail)}${memo}` };
+      return { Icon: ArrowDownLeft, tone: "text-teal-300", text: `Received ${amt(t)} from ${niceName(t.fromEmail)}${memo}` };
+    return { Icon: ArrowUpRight, tone: "text-gold-300", text: `Sent ${amt(t)} to ${niceName(t.toEmail)}${memo}` };
   }
 
   return (
