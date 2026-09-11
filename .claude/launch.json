@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "capsule-coin",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "serve:lan"],
+      "port": 2770
+    },
+    {
+      "name": "capsule-test",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["scripts/serve-test.cjs"],
+      "port": 2771
+    }
+  ]
+}

@@ -1,0 +1,248 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* Fallback stacks; next/font overrides these on <html> when the fonts load. */
+  --font-display: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-body: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+@layer base {
+  html {
+    color-scheme: dark;
+  }
+  body {
+    background-color: #0b0e14;
+    color: #e6eaf2;
+    min-height: 100vh;
+    font-family: var(--font-body);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  h1,
+  h2,
+  h3,
+  .font-display {
+    font-family: var(--font-display);
+    letter-spacing: -0.01em;
+  }
+  ::selection {
+    background: rgba(245, 197, 66, 0.3);
+    color: #fff;
+  }
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: #263149 transparent;
+  }
+  *::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  *::-webkit-scrollbar-thumb {
+    background: #263149;
+    border-radius: 999px;
+  }
+}
+
+@layer components {
+  .capsule-card {
+    background: rgba(18, 24, 38, 0.72);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 28px;
+    backdrop-filter: blur(18px);
+    box-shadow: 0 20px 60px -20px rgba(0, 0, 0, 0.7);
+  }
+  .btn,
+  .btn-gold,
+  .btn-ghost {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    border-radius: 999px;
+    padding: 0.7rem 1.35rem;
+    font-weight: 500;
+    transition: all 0.2s ease;
+    cursor: pointer;
+    border: 1px solid transparent;
+    white-space: nowrap;
+  }
+  .btn:disabled,
+  .btn-gold:disabled,
+  .btn-ghost:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  .btn-gold {
+    color: #0b0e14;
+    background: linear-gradient(180deg, #ffd666 0%, #e0a82e 100%);
+    box-shadow: 0 0 0 1px rgba(245, 197, 66, 0.15),
+      0 8px 40px -8px rgba(245, 197, 66, 0.35);
+  }
+  .btn-gold:not(:disabled):hover {
+    filter: brightness(1.08);
+    transform: translateY(-1px);
+  }
+  .btn-ghost {
+    color: #9aa6bf;
+    border-color: #263149;
+    background: transparent;
+  }
+  .btn-ghost:not(:disabled):hover {
+    color: #fff;
+    border-color: rgba(245, 197, 66, 0.5);
+  }
+  .field {
+    width: 100%;
+    border-radius: 16px;
+    background: rgba(14, 19, 32, 0.8);
+    border: 1px solid #263149;
+    padding: 0.85rem 1rem;
+    color: #fff;
+    outline: none;
+    transition: all 0.2s ease;
+  }
+  .field::placeholder {
+    color: rgba(154, 166, 191, 0.6);
+  }
+  .field:focus {
+    border-color: rgba(245, 197, 66, 0.6);
+    box-shadow: 0 0 0 3px rgba(245, 197, 66, 0.15);
+  }
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.3rem 0.75rem;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    border: 1px solid #263149;
+    color: #9aa6bf;
+    background: rgba(14, 19, 32, 0.5);
+  }
+  .text-gradient-gold {
+    background: linear-gradient(90deg, #ffe29a, #f5c542 45%, #e0a82e);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+}
+
+@keyframes mine-pop {
+  0% { transform: translate(-50%, 8px) scale(0.7); opacity: 0; }
+  25% { opacity: 1; }
+  100% { transform: translate(-50%, -48px) scale(1.15); opacity: 0; }
+}
+.animate-mine-pop { animation: mine-pop 1.7s ease-out forwards; }
+
+/* ── Mining rig ─────────────────────────────────────────────────────────── */
+@keyframes token-scroll {
+  from { transform: translateY(0); }
+  to { transform: translateY(-50%); }
+}
+.animate-token-scroll { animation: token-scroll 3.4s linear infinite; }
+.animate-token-scroll-fast { animation: token-scroll 0.9s linear infinite; }
+
+@keyframes scan-sweep {
+  0% { transform: translateY(-110%); opacity: 0; }
+  15% { opacity: 1; }
+  85% { opacity: 1; }
+  100% { transform: translateY(110%); opacity: 0; }
+}
+.animate-scan-sweep { animation: scan-sweep 1.05s ease-in-out infinite; }
+
+@keyframes match-burst {
+  0% { transform: scale(0.4); opacity: 0; }
+  45% { transform: scale(1.18); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+.animate-match-burst { animation: match-burst 0.5s cubic-bezier(0.22, 1, 0.36, 1) both; }
+
+@keyframes cap-slam {
+  0% { transform: scale(2.3); opacity: 0; filter: blur(6px); }
+  55% { transform: scale(0.92); opacity: 1; filter: blur(0); }
+  100% { transform: scale(1); opacity: 1; }
+}
+.animate-cap-slam { animation: cap-slam 0.6s cubic-bezier(0.22, 1, 0.36, 1) both; }
+
+@keyframes toast-in {
+  from { transform: translateY(-16px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+.animate-toast-in { animation: toast-in 0.26s ease-out both; }
+
+@keyframes toast-in-up {
+  from { transform: translateY(16px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+.animate-toast-in-up { animation: toast-in-up 0.26s ease-out both; }
+
+/* ── Foundational polish (Phase 7) ──────────────────────────────────────── */
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+  /* Consistent, on-brand keyboard focus ring */
+  a:focus-visible,
+  button:focus-visible,
+  select:focus-visible,
+  [role="button"]:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(245, 197, 66, 0.4);
+  }
+}
+
+@layer components {
+  /* Native selects, themed to match .field */
+  select.field {
+    appearance: none;
+    -webkit-appearance: none;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%239AA6BF' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='m6 9 6 6 6-6'/></svg>");
+    background-repeat: no-repeat;
+    background-position: right 0.9rem center;
+    background-size: 12px;
+    padding-right: 2.5rem;
+  }
+  /* Lift + gold edge for interactive cards */
+  .card-hover {
+    transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+  }
+  .card-hover:hover {
+    transform: translateY(-3px);
+    border-color: rgba(245, 197, 66, 0.28);
+    box-shadow: 0 26px 64px -26px rgba(0, 0, 0, 0.8),
+      0 0 0 1px rgba(245, 197, 66, 0.12);
+  }
+  .btn:focus-visible,
+  .btn-gold:focus-visible,
+  .btn-ghost:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(245, 197, 66, 0.45);
+  }
+}
+
+/* Entrance motion: content rises + fades in on mount/navigation */
+@keyframes rise {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-rise { animation: rise 0.5s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.stagger > * { animation: rise 0.5s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.stagger > *:nth-child(1) { animation-delay: 0.03s; }
+.stagger > *:nth-child(2) { animation-delay: 0.08s; }
+.stagger > *:nth-child(3) { animation-delay: 0.13s; }
+.stagger > *:nth-child(4) { animation-delay: 0.18s; }
+.stagger > *:nth-child(5) { animation-delay: 0.23s; }
+.stagger > *:nth-child(6) { animation-delay: 0.28s; }
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .animate-mine-pop, .animate-float, .animate-spin-slow, .animate-glow-pulse,
+  .animate-token-scroll, .animate-token-scroll-fast, .animate-scan-sweep,
+  .animate-match-burst, .animate-cap-slam, .animate-toast-in, .animate-toast-in-up,
+  .animate-rise, .stagger > * {
+    animation: none !important;
+  }
+  .card-hover:hover { transform: none; }
+}
