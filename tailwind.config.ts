@@ -36,6 +36,14 @@ const config: Config = {
           500: "#2DD4BF",
           600: "#14B8A6",
         },
+        // Dark Capsule Coin (DC): ember / fire on obsidian.
+        ember: {
+          300: "#FDBA74",
+          400: "#FB923C",
+          500: "#F97316",
+          600: "#EA580C",
+          700: "#C2410C",
+        },
         mute: "#9AA6BF",
       },
       fontFamily: {
@@ -48,6 +56,7 @@ const config: Config = {
       boxShadow: {
         glow: "0 0 0 1px rgba(245,197,66,0.15), 0 8px 40px -8px rgba(245,197,66,0.25)",
         "glow-teal": "0 0 0 1px rgba(45,212,191,0.15), 0 8px 40px -8px rgba(45,212,191,0.25)",
+        "glow-ember": "0 0 0 1px rgba(249,115,22,0.18), 0 8px 40px -8px rgba(249,115,22,0.35)",
         panel: "0 20px 60px -20px rgba(0,0,0,0.7)",
       },
       keyframes: {

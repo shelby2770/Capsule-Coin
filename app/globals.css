@@ -55,6 +55,7 @@
   }
   .btn,
   .btn-gold,
+  .btn-ember,
   .btn-ghost {
     display: inline-flex;
     align-items: center;
@@ -70,6 +71,7 @@
   }
   .btn:disabled,
   .btn-gold:disabled,
+  .btn-ember:disabled,
   .btn-ghost:disabled {
     opacity: 0.5;
     cursor: not-allowed;
@@ -126,6 +128,34 @@
     -webkit-background-clip: text;
     background-clip: text;
     color: transparent;
+  }
+  /* ── Dark Capsule Coin (DC): ember on obsidian ────────────────────────── */
+  .text-gradient-ember {
+    background: linear-gradient(90deg, #fdba74, #f97316 45%, #ea580c);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .btn-ember {
+    color: #180d06;
+    background: linear-gradient(180deg, #fb923c 0%, #ea580c 100%);
+    box-shadow: 0 0 0 1px rgba(249, 115, 22, 0.15),
+      0 8px 40px -8px rgba(249, 115, 22, 0.4);
+  }
+  .btn-ember:not(:disabled):hover {
+    filter: brightness(1.08);
+    transform: translateY(-1px);
+  }
+  .dc-card {
+    background: linear-gradient(180deg, rgba(38, 18, 10, 0.55), rgba(18, 24, 38, 0.72));
+    border: 1px solid rgba(249, 115, 22, 0.18);
+    border-radius: 28px;
+    backdrop-filter: blur(18px);
+    box-shadow: 0 20px 60px -20px rgba(0, 0, 0, 0.7);
+  }
+  .dc-ring:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(249, 115, 22, 0.45);
   }
 }
 

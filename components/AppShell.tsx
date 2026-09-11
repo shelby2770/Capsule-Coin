@@ -9,6 +9,9 @@ import { CoinLogo } from "@/components/CoinLogo";
 import { Skeleton } from "@/components/Skeleton";
 import { NotificationsBell } from "@/components/NotificationsBell";
 import { ValueTicker } from "@/components/ValueTicker";
+import { StoryMode } from "@/components/StoryMode";
+import { StandingBanner } from "@/components/StandingBanner";
+import { formatDC } from "@/lib/format";
 import {
   LogOut,
   Wallet,
@@ -18,6 +21,9 @@ import {
   FileSpreadsheet,
   Loader2,
   Lock,
+  Repeat,
+  Sprout,
+  Flame,
 } from "lucide-react";
 
 const NAV: Array<{
@@ -30,6 +36,8 @@ const NAV: Array<{
   { href: "/leaderboard", label: "Leaderboard", icon: Trophy },
   { href: "/market", label: "Market", icon: Store },
   { href: "/mine", label: "Mine", icon: Pickaxe },
+  { href: "/convert", label: "Convert", icon: Repeat },
+  { href: "/fund", label: "Fund", icon: Sprout },
   { href: "/ledger", label: "Ledger", icon: FileSpreadsheet },
 ];
 
@@ -162,6 +170,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
 
         <div className="flex items-center gap-3">
+          <Link
+            href="/convert"
+            className="chip border-ember-500/30 text-ember-300 hover:text-ember-200"
+            title="Your Dark Capsule Coin — tap to convert"
+          >
+            <Flame size={13} /> {formatDC(member?.dcBalance ?? 0)}
+            <span className="hidden sm:inline">DC</span>
+          </Link>
           {member?.role && (
             <span className="chip hidden border-teal-500/30 text-teal-300 sm:inline-flex">
               {member.role}
@@ -236,8 +252,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </nav>
 
       <main key={pathname} className="mt-6 animate-rise">
+        <StandingBanner />
         {children}
       </main>
+
+      <StoryMode />
     </div>
   );
 }

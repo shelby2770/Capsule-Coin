@@ -8,7 +8,7 @@ import { useLeaderboard } from "@/lib/useLeaderboard";
 import { useTransactions } from "@/lib/useTransactions";
 import { useValue } from "@/lib/useValue";
 import { CountUp } from "@/components/CountUp";
-import { formatCC, BALANCE_WARN } from "@/lib/format";
+import { formatCC, formatDC, BALANCE_WARN } from "@/lib/format";
 import { CoinLogo } from "@/components/CoinLogo";
 import { Sparkline } from "@/components/Sparkline";
 import type { TransactionPublic, ValueResponse } from "@/lib/types";
@@ -148,7 +148,8 @@ function ActivityRow({ tx, email }: { tx: TransactionPublic; email: string }) {
       </div>
       <div className={`text-sm font-semibold ${delta >= 0 ? "text-teal-300" : "text-mute"}`}>
         {delta >= 0 ? "+" : "−"}
-        {formatCC(Math.abs(delta))} CC
+        {tx.currency === "DC" ? formatDC(Math.abs(delta)) : formatCC(Math.abs(delta))}{" "}
+        {tx.currency}
       </div>
     </div>
   );
@@ -161,6 +162,7 @@ function WalletHome() {
   const { data: value } = useValue();
   const you = data?.rows.find((r) => r.isYou);
   const balance = member?.balance ?? 0;
+  const dcBalance = member?.dcBalance ?? 0;
   const email = member?.email ?? "";
   const mySlug = email ? email.split("@")[0] : "";
   const topHolders = data?.rows.slice(0, 5) ?? [];
@@ -181,11 +183,26 @@ function WalletHome() {
             />
             <span className="text-xl font-semibold text-gold-400">CC</span>
           </div>
+          <div className="mt-2 flex items-center gap-2">
+            <Flame size={15} className="text-ember-400" />
+            <CountUp
+              value={dcBalance}
+              format={formatDC}
+              className="text-lg font-semibold text-ember-300"
+            />
+            <span className="text-sm font-semibold text-ember-400">DC</span>
+            <Link
+              href="/convert"
+              className="text-xs text-mute underline-offset-2 hover:text-ember-300 hover:underline"
+            >
+              convert →
+            </Link>
+          </div>
           <p className="mt-2 max-w-sm text-sm text-mute">
             Welcome, {member?.name?.split(" ")[0]}.{" "}
-            {balance === 0
-              ? "Head to Mine to claim your first CC."
-              : "Mine more, or spend it on the market."}
+            {balance === 0 && dcBalance === 0
+              ? "Head to Mine to forge your first DC."
+              : "Mine DC, convert to CC, or trade on the market."}
           </p>
         </div>
         <div className="animate-float">

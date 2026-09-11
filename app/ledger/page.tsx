@@ -27,7 +27,7 @@ import {
   ChevronLeft,
   ChevronRight,
 } from "lucide-react";
-import { formatCC } from "@/lib/format";
+import { formatCC, formatDC } from "@/lib/format";
 
 export default function LedgerPage() {
   return (
@@ -61,6 +61,8 @@ const TYPE_FILTERS: {
   { key: "TRADE", label: "Trades", match: (t) => t === "TRADE" },
   { key: "TRANSFER", label: "Transfers", match: (t) => t === "TRANSFER" },
   { key: "MINE", label: "Mining", match: (t) => t === "MINE" },
+  { key: "CONVERT", label: "Convert", match: (t) => t === "CONVERT" },
+  { key: "PURCHASE", label: "Buy DC", match: (t) => t === "PURCHASE" },
   { key: "BURN", label: "Burns", match: (t) => t === "BURN" },
 ];
 
@@ -80,7 +82,7 @@ function txLabel(tx: LedgerTx): string {
     case "BURN":
       return "Burned to unlock mining";
     case "MINE":
-      return "Mined CC";
+      return "Mined DC";
     case "ESCROW_LOCK":
       return "Escrow locked";
     case "ESCROW_REFUND":
@@ -158,7 +160,7 @@ function Ledger() {
   /** Download the current filtered view (all matching rows, not just this page) as CSV. */
   function exportCsv() {
     if (filtered.length === 0) return;
-    const cols = ["Seq", "Timestamp", "Type", "From", "To", "Amount (CC)", "Memo"];
+    const cols = ["Seq", "Timestamp", "Type", "Currency", "From", "To", "Amount", "Memo"];
     const esc = (v: string | number) => {
       const s = String(v ?? "");
       return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
@@ -167,6 +169,7 @@ function Ledger() {
       t.seq,
       t.createdAt,
       t.type,
+      t.currency,
       t.fromName ?? "",
       t.toName ?? "",
       t.amountCC,
@@ -374,9 +377,15 @@ function Ledger() {
                         })}
                       </div>
                     </div>
-                    <div className="shrink-0 text-sm font-semibold text-gold-300">
-                      {formatCC(tx.amountCC)}{" "}
-                      <span className="text-mute">CC</span>
+                    <div
+                      className={`shrink-0 text-sm font-semibold ${
+                        tx.currency === "DC" ? "text-ember-300" : "text-gold-300"
+                      }`}
+                    >
+                      {tx.currency === "DC"
+                        ? formatDC(tx.amountCC)
+                        : formatCC(tx.amountCC)}{" "}
+                      <span className="text-mute">{tx.currency}</span>
                     </div>
                   </li>
                 );

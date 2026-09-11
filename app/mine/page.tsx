@@ -3,18 +3,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AppShell } from "@/components/AppShell";
 import { useAuth } from "@/components/AuthProvider";
-import { CoinLogo } from "@/components/CoinLogo";
+import { DarkCoinLogo } from "@/components/DarkCoinLogo";
 import { CountUp } from "@/components/CountUp";
 import type { MiningStatus, MineOutcome, BuyPackOutcome } from "@/lib/types";
 import { emitLedgerChange } from "@/lib/ledgerEvents";
-import { formatCC, round2 } from "@/lib/format";
+import { formatCC, formatDC, round2 } from "@/lib/format";
 import {
   Pickaxe,
   Loader2,
   Zap,
   Sparkles,
   Flame,
-  Coins,
   CircleCheck,
   CircleAlert,
   Lock,
@@ -212,7 +211,8 @@ function Mine() {
     }
   }
 
-  const balance = member?.balance ?? status?.balance ?? 0;
+  const dcBalance = member?.dcBalance ?? status?.dcBalance ?? 0;
+  const ccBalance = member?.balance ?? status?.balance ?? 0;
   const reservePct = status
     ? Math.max(0, Math.min(100, (status.reserveRemaining / status.supplyCap) * 100))
     : 0;
@@ -240,11 +240,11 @@ function Mine() {
 
       <div className="text-center">
         <h1 className="flex items-center justify-center gap-2 font-display text-2xl font-bold text-white">
-          <Pickaxe size={22} className="text-gold-400" /> Mining Rig
+          <Pickaxe size={22} className="text-ember-400" /> Mining Rig
         </h1>
         <p className="mt-1 text-sm text-mute">
           Draw {status ? status.tokensPerSide.toLocaleString() : "100,000"} tokens
-          against the secret vault — every collision with the hidden set mints CC.
+          against the secret vault — every collision with the hidden set forges DC.
         </p>
       </div>
 
@@ -267,7 +267,7 @@ function Mine() {
             {phase === "idle" && (
               <div className="flex flex-col items-center text-center">
                 <div className="animate-float">
-                  <CoinLogo size={72} glow />
+                  <DarkCoinLogo size={72} glow />
                 </div>
                 <p className="mt-3 text-[11px] uppercase tracking-wider text-mute">
                   Rig idle
@@ -291,17 +291,17 @@ function Mine() {
             {(phase === "revealing" || phase === "result") && result && (
               <div className="flex flex-col items-center text-center">
                 {result.capped ? (
-                  <Sparkles size={30} className="animate-cap-slam text-gold-300" />
+                  <Sparkles size={30} className="animate-cap-slam text-ember-300" />
                 ) : (
-                  <Coins size={30} className="text-gold-400" />
+                  <Flame size={30} className="text-ember-400" />
                 )}
                 <div className="mt-2 flex items-baseline gap-1">
-                  <span className="font-display text-3xl font-black tabular-nums text-gold-300">
-                    {formatCC(phase === "result" ? result.reward : tally)}
+                  <span className="font-display text-3xl font-black tabular-nums text-ember-300">
+                    {formatDC(phase === "result" ? result.reward : tally)}
                   </span>
                 </div>
                 <p className="text-[10px] uppercase tracking-wider text-mute">
-                  CC mined
+                  DC forged
                 </p>
                 <p className="mt-1 text-[11px] text-teal-300">
                   {result.matches} match{result.matches === 1 ? "" : "es"}
@@ -332,9 +332,9 @@ function Mine() {
                 {reveal.map((v, i) => (
                   <span
                     key={i}
-                    className="animate-match-burst inline-flex items-center gap-1 rounded-full border border-gold-500/30 bg-gold-500/10 px-2 py-0.5 text-[11px] font-semibold text-gold-300"
+                    className="animate-match-burst inline-flex items-center gap-1 rounded-full border border-ember-500/30 bg-ember-500/10 px-2 py-0.5 text-[11px] font-semibold text-ember-300"
                   >
-                    <Sparkles size={11} /> +{formatCC(v)}
+                    <Sparkles size={11} /> +{formatDC(v)}
                   </span>
                 ))}
               </div>
@@ -344,26 +344,35 @@ function Mine() {
       </section>
 
       {/* ── balance + action ── */}
-      <section className="capsule-card p-5">
+      <section className="dc-card p-5">
         <div className="flex items-center justify-between">
           <div>
             <div className="text-xs uppercase tracking-wider text-mute">
-              Your balance
+              Your Dark Capsule Coin
             </div>
             <div className="mt-0.5 flex items-baseline gap-1.5">
               <CountUp
-                value={balance}
-                format={formatCC}
+                value={dcBalance}
+                format={formatDC}
                 className="text-3xl font-bold text-white"
               />
-              <span className="text-base font-semibold text-gold-400">CC</span>
+              <span className="text-base font-semibold text-ember-400">DC</span>
+            </div>
+            <div className="mt-0.5 text-xs text-mute">
+              {formatCC(ccBalance)} CC available for pack fees
             </div>
           </div>
           <AttemptsBadge status={status} />
         </div>
 
         <div className="mt-4">
-          {status && !status.canMine && needsPack && !status.nextTier ? (
+          {status && status.standing !== "OK" ? (
+            <div className="rounded-capsule border border-ember-500/40 bg-ember-500/10 px-5 py-3 text-center text-sm text-ember-200">
+              {status.standing === "BANNED"
+                ? "Mining is locked — your account is frozen."
+                : "Mining is locked while you're below the −500 CC floor. Sell or convert DC to recover."}
+            </div>
+          ) : status && !status.canMine && needsPack && !status.nextTier ? (
             <div className="rounded-capsule border border-edge bg-ink-800/60 px-5 py-3 text-center text-sm text-mute">
               You&apos;ve used every mine today. Refills in{" "}
               <span className="text-white">
@@ -422,26 +431,26 @@ function Mine() {
       <section className="capsule-card p-5">
         <div className="flex items-center justify-between text-sm">
           <span className="flex items-center gap-2 text-mute">
-            <Vault size={15} className="text-teal-400" /> Mining reserve
+            <Vault size={15} className="text-teal-400" /> DC mining reserve
           </span>
           <span className="font-semibold text-white">
-            {status ? formatCC(status.reserveRemaining) : "—"}
+            {status ? formatDC(status.reserveRemaining) : "—"}
             <span className="text-mute">
               {" "}
-              / {status ? status.supplyCap.toLocaleString() : "—"} CC
+              / {status ? status.supplyCap.toLocaleString() : "—"} DC
             </span>
           </span>
         </div>
         <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-white/5">
           <div
-            className="h-full rounded-full bg-gradient-to-r from-teal-400 to-gold-500 transition-all duration-700"
+            className="h-full rounded-full bg-gradient-to-r from-teal-400 to-ember-500 transition-all duration-700"
             style={{ width: `${reservePct}%` }}
           />
         </div>
         <p className="mt-2 text-[11px] leading-relaxed text-mute">
           Fixed supply: only this reserve can ever be mined into circulation, so
-          CC can&apos;t inflate away. Burned pay-to-mine fees flow back in — an
-          active rig keeps mining alive.
+          DC can&apos;t inflate away. Converting DC → CC destroys DC and reopens
+          headroom — an active economy keeps mining alive.
         </p>
       </section>
     </div>
