@@ -33,6 +33,24 @@ export function formatCC(n: number): string {
 export const DC_TICKER = "DC";
 export const DC_EMOJI = "🔥";
 
+/** Map Latin digits in a string to Bangla numerals (০-৯); other chars untouched. */
+export function toBanglaDigits(s: string | number): string {
+  const bn = ["০", "১", "২", "৩", "৪", "৫", "৬", "৭", "৮", "৯"];
+  return String(s).replace(/[0-9]/g, (d) => bn[Number(d)]);
+}
+
+/**
+ * Format a taka (BDT) amount in Bangla numerals for display — the group reads
+ * value in Bangla (e.g. 1.3 -> "১.৩০"). Prefix the ৳ sign at the call site.
+ * `grouped` adds thousands separators (also Bangla).
+ */
+export function formatBdt(n: number, digits = 2, grouped = false): string {
+  const s = grouped
+    ? n.toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits })
+    : n.toFixed(digits);
+  return toBanglaDigits(s);
+}
+
 /**
  * Format a DC amount for display. Same 2-decimal rule as CC, but DC can never be
  * negative (enforced in the store), so a stray negative renders as 0.

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { AppShell } from "@/components/AppShell";
 import { useAuth } from "@/components/AuthProvider";
-import { formatDC } from "@/lib/format";
+import { formatDC, toBanglaDigits } from "@/lib/format";
 import { Apple, Loader2, Plus, Sprout } from "lucide-react";
 
 type Fund = { totalBdt: number; contributions: number; ministerEmail: string };
@@ -75,7 +75,7 @@ function Fund() {
       if (r.ok) {
         setMsg({
           kind: "ok",
-          text: `Credited ${formatDC(d.dcCredited)} DC. Fruit Fund is now ৳${d.fruitFundBdt}.`,
+          text: `Credited ${formatDC(d.dcCredited)} DC. Fruit Fund is now ৳${toBanglaDigits(d.fruitFundBdt)}.`,
         });
         setDcAmount("");
         setBdtPaid("");
@@ -116,7 +116,7 @@ function Fund() {
         <div className="mt-6 flex items-end gap-3">
           <Apple size={26} className="mb-1 text-teal-400" />
           <span className="font-display text-4xl font-semibold text-white">
-            ৳{fund ? fund.totalBdt.toLocaleString() : "—"}
+            ৳{fund ? toBanglaDigits(fund.totalBdt.toLocaleString()) : "—"}
           </span>
           <span className="mb-1 text-sm text-mute">
             from {fund?.contributions ?? 0} purchase{fund?.contributions === 1 ? "" : "s"}

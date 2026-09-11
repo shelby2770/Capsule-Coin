@@ -7,7 +7,7 @@ import { AppShell } from "@/components/AppShell";
 import { BalanceHistoryCard } from "@/components/BalanceHistoryCard";
 import { useAuth } from "@/components/AuthProvider";
 import { useValue } from "@/lib/useValue";
-import { formatCC, BALANCE_WARN } from "@/lib/format";
+import { formatCC, formatBdt, BALANCE_WARN } from "@/lib/format";
 import { LEDGER_EVENT } from "@/lib/ledgerEvents";
 import {
   ArrowLeft,
@@ -199,7 +199,7 @@ function MemberProfile() {
       </div>
       {bdt != null && (
         <div className="text-xs text-mute">
-          ≈ ৳{bdt.toFixed(2)} at today&apos;s rate{negative ? " (debt)" : ""}.
+          ≈ ৳{formatBdt(bdt)} at today&apos;s rate{negative ? " (debt)" : ""}.
         </div>
       )}
 

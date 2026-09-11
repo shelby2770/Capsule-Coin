@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { AppShell } from "@/components/AppShell";
 import { useValue } from "@/lib/useValue";
+import { formatBdt } from "@/lib/format";
 import { useValueHistory, type ValueRange } from "@/lib/useValueHistory";
 import { ValueChart } from "@/components/ValueChart";
 import { LineChart, Loader2 } from "lucide-react";
@@ -60,7 +61,7 @@ function ValueHistory() {
             <div className="text-xs uppercase tracking-wide text-mute">1 CC is worth</div>
             <div className="mt-1 flex items-baseline gap-2">
               <span className="text-4xl font-bold text-gold-300">
-                ৳{data ? data.bdtPerCC.toFixed(2) : "—"}
+                ৳{data ? formatBdt(data.bdtPerCC) : "—"}
               </span>
               <span className="text-lg text-white/80">
                 ${data ? data.usdPerCC.toFixed(4) : "—"}
@@ -105,8 +106,8 @@ function ValueHistory() {
           value={change == null ? "—" : `${change > 0 ? "+" : ""}${change.toFixed(1)}%`}
           tone={up ? "text-teal-300" : down ? "text-red-300" : "text-white"}
         />
-        <Stat label="Range high" value={high == null ? "—" : `৳${high.toFixed(2)}`} />
-        <Stat label="Range low" value={low == null ? "—" : `৳${low.toFixed(2)}`} />
+        <Stat label="Range high" value={high == null ? "—" : `৳${formatBdt(high)}`} />
+        <Stat label="Range low" value={low == null ? "—" : `৳${formatBdt(low)}`} />
         <Stat label="Balance spread (σ)" value={data ? `${data.spread}` : "—"} />
       </div>
 

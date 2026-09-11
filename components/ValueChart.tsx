@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { ValuePoint } from "@/lib/types";
+import { formatBdt } from "@/lib/format";
 
 const W = 720;
 const H = 260;
@@ -80,7 +81,7 @@ export function ValueChart({ series }: { series: ValuePoint[] }) {
         <g key={i}>
           <line x1={PAD.l} x2={W - PAD.r} y1={Y(v)} y2={Y(v)} stroke="#ffffff" strokeOpacity="0.07" />
           <text x={PAD.l - 8} y={Y(v) + 3} textAnchor="end" fontSize="11" fill={MUTE}>
-            ৳{v.toFixed(2)}
+            ৳{formatBdt(v)}
           </text>
         </g>
       ))}
@@ -102,7 +103,7 @@ export function ValueChart({ series }: { series: ValuePoint[] }) {
           <g transform={`translate(${tipX}, ${PAD.t + 4})`}>
             <rect x="-54" y="-2" width="108" height="38" rx="8" fill="#0f0f14" stroke="#ffffff" strokeOpacity="0.12" />
             <text x="0" y="14" textAnchor="middle" fontSize="13" fontWeight="700" fill={GOLD}>
-              ৳{hp.value.toFixed(2)}
+              ৳{formatBdt(hp.value)}
             </text>
             <text x="0" y="29" textAnchor="middle" fontSize="10" fill={MUTE}>
               {new Date(hp.t).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}

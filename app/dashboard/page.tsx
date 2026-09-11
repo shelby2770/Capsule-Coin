@@ -8,7 +8,7 @@ import { useLeaderboard } from "@/lib/useLeaderboard";
 import { useTransactions } from "@/lib/useTransactions";
 import { useValue } from "@/lib/useValue";
 import { CountUp } from "@/components/CountUp";
-import { formatCC, formatDC, BALANCE_WARN } from "@/lib/format";
+import { formatCC, formatDC, formatBdt, BALANCE_WARN } from "@/lib/format";
 import { CoinLogo } from "@/components/CoinLogo";
 import { Sparkline } from "@/components/Sparkline";
 import type { TransactionPublic, ValueResponse } from "@/lib/types";
@@ -87,7 +87,7 @@ function ValueCard({ data }: { data: ValueResponse | null }) {
           </div>
           <div className="mt-2 flex flex-wrap items-baseline gap-x-3 gap-y-1">
             <span className="text-4xl font-bold tabular-nums text-gold-300">
-              ৳{data ? data.bdtPerCC.toFixed(2) : "—"}
+              ৳{data ? formatBdt(data.bdtPerCC) : "—"}
             </span>
             <span className="text-xl font-semibold tabular-nums text-white">
               ${data ? data.usdPerCC.toFixed(4) : "—"}
