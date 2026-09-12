@@ -4,7 +4,6 @@ import ExcelJS from "exceljs";
 import { createHash, randomUUID, randomBytes, randomInt } from "crypto";
 import { config } from "@/lib/config";
 import { round2 } from "@/lib/format";
-import { valueReport } from "@/lib/value";
 import { roleFor, isAllowed, allowlistEntry, ALLOWLIST } from "@/lib/allowlist";
 import { adminDb } from "@/lib/firebase/admin";
 import type {
@@ -2020,51 +2019,42 @@ export async function fruitFundStatus(): Promise<FruitFundStatus> {
 }
 
 export type DcBuyPricing = {
-  bdtPerCC: number; // live CC market price (৳)
-  baseBdtPerDc: number; // ৳ for 1 DC at low volume (before the bulk bonus)
-  supply: number; // total DC in circulation
+  baseBdtPerDc: number; // ৳ per DC at the ৳100 anchor (100 / buyDcPer100)
   // how much DC common taka amounts buy; bonusPct = the extra DC/taka vs the
-  // smallest tier (so it reads 0 on ৳100 and climbs from there)
+  // ৳100 tier (so it reads 0 on ৳100 and climbs from there)
   tiers: Array<{ bdt: number; dc: number; bonusPct: number }>;
 };
 
 /**
- * Reference pricing for buying DC with real money — the LIVE market rate plus a
- * VOLUME BONUS (the more taka you invest, the more DC per taka you get).
- *
- *   baseBdtPerDc = bulkMax · m(S) · bdtPerCC          (1 DC's ৳ value, low volume)
- *   DC(bdt)      = (bdt / baseBdtPerDc) · volMult(bdt)
+ * Reference pricing for buying DC with real money — a STABLE, generous on-ramp.
+ * ৳100 is the anchor (buyDcPer100 DC, ~113), deliberately decoupled from the
+ * volatile CC spread price so the real-money value doesn't swing tier-to-tier or
+ * day-to-day. Bigger buys earn a bounded VOLUME BONUS on top, measured relative
+ * to the ৳100 point so the anchor stays exact:
  *   volMult(bdt) = 1 + buyBonusMax · (1 − e^(−bdt / buyBonusScale))
- *
- * volMult rises from 1 toward 1+buyBonusMax as bdt grows, so ৳200 buys strictly
- * MORE than 2×৳100, ৳500 more than 5×, etc. — bounded, never runaway. Everything
- * tracks the live CC price and DC scarcity. The Fruit Minister still records the
- * actual figures; this only powers the on-screen guide.
+ *   DC(bdt)      = (bdt/100) · buyDcPer100 · volMult(bdt)/volMult(100)
+ * ⇒ ৳100 = buyDcPer100, ৳200 > 2×, ৳500 > 5×, ৳1000 > 10×. (DC scarcity still
+ * governs the exit — the DC→CC convert; this on-ramp is intentionally simple and
+ * stable.) The Fruit Minister still records the actual figures; this is the guide.
  */
 export async function dcBuyPricing(): Promise<DcBuyPricing> {
-  const s = await ensureLoaded();
-  const v = valueReport(s, Date.now());
-  const supply = totalDcSupply(s);
   const c = config.dc;
-  const S = Math.max(1, supply); // near-empty market reads "scarce"
-  const m = Math.min(c.clampMax, Math.max(c.clampMin, Math.pow(c.refSupply / S, c.supplyGamma)));
-  const bdtPerCC = v.bdtPerCC;
-  const baseBdtPerDc = round2(c.bulkMax * m * bdtPerCC);
-  const baseRate = baseBdtPerDc > 0 ? 1 / baseBdtPerDc : 0; // DC per taka, pre-bonus
+  const per100 = c.buyDcPer100;
   const volMult = (bdt: number) =>
     1 + c.buyBonusMax * (1 - Math.exp(-bdt / Math.max(1, c.buyBonusScale)));
+  const anchorMult = volMult(100); // normalize so ৳100 lands exactly on the anchor
+  const dcFor = (bdt: number) =>
+    round2((bdt / 100) * per100 * (volMult(bdt) / anchorMult));
 
-  const raw = [100, 200, 500, 1000].map((bdt) => ({
-    bdt,
-    dc: round2(bdt * baseRate * volMult(bdt)),
-  }));
-  // Bonus vs the smallest tier's DC/taka, so the "bigger = better" step is visible.
+  const raw = [100, 200, 500, 1000].map((bdt) => ({ bdt, dc: dcFor(bdt) }));
+  // Bonus vs the ৳100 tier's DC/taka, so the "bigger = better" step is visible.
   const rate0 = raw[0].dc > 0 ? raw[0].dc / raw[0].bdt : 0;
   const tiers = raw.map((t) => ({
     ...t,
     bonusPct: rate0 > 0 ? Math.round((t.dc / t.bdt / rate0 - 1) * 100) : 0,
   }));
-  return { bdtPerCC, baseBdtPerDc, supply: round2(supply), tiers };
+  const baseBdtPerDc = per100 > 0 ? round2(100 / per100) : 0;
+  return { baseBdtPerDc, tiers };
 }
 
 /** True for the one member allowed to record real-money DC purchases. */

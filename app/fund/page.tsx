@@ -22,9 +22,7 @@ type Fund = {
   recent: Purchase[];
 };
 type Pricing = {
-  bdtPerCC: number;
   baseBdtPerDc: number;
-  supply: number;
   tiers: Array<{ bdt: number; dc: number; bonusPct: number }>;
 };
 type Row = { name: string; email: string };
@@ -189,8 +187,8 @@ function Fund() {
           <span className="font-semibold text-flame">
             the more taka you invest, the better your DC rate
           </span>
-          {pricing ? <> (small buys ≈ ৳{formatBdt(pricing.baseBdtPerDc)}/DC)</> : null}. Tracks the live CC
-          price and DC scarcity, so it moves with the market.
+          {pricing ? <> (≈ ৳{formatBdt(pricing.baseBdtPerDc)} per DC on a ৳১০০ buy)</> : null}. A steady
+          real-money rate — the bonus grows with the size of your purchase.
         </p>
 
         <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">

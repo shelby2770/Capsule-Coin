@@ -83,10 +83,14 @@ export const config = {
     // Buy DC with real money (admin-recorded). 0 = rate not set yet. Proceeds are
     // tallied into the Capsule Fruit Fund, maintained by the Fruit Minister (Jakir).
     bdtPerDc: num(process.env.DC_BDT_PER_DC, 0),
-    // Volume bonus on buying DC with taka: the more you invest, the more DC per
-    // taka you get (a bounded bulk reward). DC(bdt) = (bdt / marketPricePerDc) ·
-    // (1 + buyBonusMax·(1 − e^(−bdt/buyBonusScale))). Max at buyBonusMax over the
-    // base rate; buyBonusScale is the taka scale over which the bonus ramps in.
+    // Buying DC with taka — a STABLE, generous real-money on-ramp, deliberately
+    // decoupled from the volatile CC spread price so ৳100 reliably lands near
+    // buyDcPer100 (the whole point: focus on the real value of money). The ৳100
+    // buy is the anchor; bigger buys earn a bounded volume bonus on top:
+    //   volMult(bdt) = 1 + buyBonusMax·(1 − e^(−bdt/buyBonusScale))
+    //   DC(bdt)      = (bdt/100)·buyDcPer100 · volMult(bdt)/volMult(100)
+    // ⇒ ৳100 → buyDcPer100 exactly, ৳200 > 2×, ৳500 > 5×, ৳1000 > 10×.
+    buyDcPer100: num(process.env.DC_BUY_PER_100, 113),
     buyBonusMax: num(process.env.DC_BUY_BONUS_MAX, 0.5),
     buyBonusScale: num(process.env.DC_BUY_BONUS_SCALE, 500),
     fruitMinisterEmail:
