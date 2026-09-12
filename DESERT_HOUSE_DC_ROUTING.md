@@ -83,8 +83,15 @@ The endpoint auto-detects a purchase from `type: "purchase"` or the presence of
 
 ## Gemini side (what to paste into the two Studio steps)
 
-Both steps now also receive **AUTHOR_EMAIL** from step 1 (the trusted Chat
-sender). If your step 2 currently only passes MESSAGE_TEXT, add AUTHOR_EMAIL too.
+Step 2 (the gate) needs only MESSAGE_TEXT. Step 3 (the extractor) needs
+MESSAGE_TEXT + AUTHOR_EMAIL (as it already does) — the Fruit-Minister check for
+taka purchases lives in step 3, and the app re-checks it against the trusted Chat
+sender, so it can't be spoofed.
+
+> **⚠️ Trigger gating:** if your Studio Flow trigger only fires on messages
+> containing **"cc"**, it will MISS DC trades and taka top-ups. Broaden the
+> trigger's "Message has" to also match **dc**, **taka**, **tk**, **fund** (or
+> drop the filter), or those messages never reach Gemini.
 
 ### Step 2 — the yes/no gate
 
@@ -93,9 +100,7 @@ You are the first gate for the Capsule Coin ledger. Decide whether the message
 reports ONE recordable event of the kinds below. Reply with exactly one
 lowercase word — yes or no — nothing else. No punctuation, no explanation.
 
-INPUT:
-- MESSAGE_TEXT: the chat message
-- AUTHOR_EMAIL: the sender's email (trusted)
+MESSAGE_TEXT: the chat message.
 
 Two coins, tied to what was traded:
 - CC (also "cc", "coin", "Capsule Coin") is for FOOD only — meals, snacks,
@@ -106,18 +111,20 @@ Two coins, tied to what was traded:
 
 Say YES for exactly one of these, fully completed:
 1. A finished FOOD sale/purchase priced in CC.
-   • "sold burger to @X for 10 CC"   • "bought pizza from Riaz bhai for 40 cc"
+   • "sold burger to @X for 10 CC"   • "bought pizza from Riaz bhai for 40 cc" 
 2. A finished NON-FOOD sale/purchase priced in DC.
    • "sold earbuds to @X for 20 DC"  • "got the phone case from Nayeem for 8 dc"
-3. A real-money top-up into the Fruit Fund — ONLY when AUTHOR_EMAIL is
-   jakir.hossen@orbitax.com (the Fruit Minister):
+3. A real-money payment INTO THE FRUIT FUND (taka / tk / ৳):
    • "Riaz paid 500 taka to fruit fund for Eid"
    • "Amdad gave 200 tk to the fund"
+   (Whether the sender is allowed to report this is checked in the next step —
+    answer yes here for any fruit-fund top-up.)
 
 Say NO for anything else, including:
 • CURRENCY MISMATCH — food priced in DC, or non-food priced in CC
   ("sold burger for 10 DC" → no; "sold earbuds for 20 CC" → no).
-• A taka → fruit-fund payment when AUTHOR_EMAIL is NOT the Fruit Minister.
+• real money (taka) paid to a PERSON, not the fruit fund
+  ("paid Riaz 100tk for the burger" → no; real-money food isn't recorded).
 • ads or listings ("selling burgers, 10 CC each")
 • price questions ("how much for the pizza?")
 • open offers / auctions still running ("starting bid 5 CC")
@@ -205,8 +212,14 @@ MESSAGE_TEXT:  from step 1
 AUTHOR_EMAIL:  from step 1
 ```
 
-The Flow's webhook step then POSTs `{token, authorEmail, messageId, gem: <step-3 JSON>}`
-to `/api/desert-house/trade?format=text` and posts the reply back into the space.
+Delivery to the app is unchanged by these prompt updates. In this Workspace the
+Studio "Send a webhook" action is disabled, so the live path is the **Sheet
+Bridge**: step 3's JSON is written to the "DesertHouse Inbox" sheet (the `gem`
+column), and a standalone Apps Script polls new rows and POSTs
+`{token, authorEmail, messageId, gem}` to `/api/desert-house/trade`. The Apps
+Script forwards the `gem` verbatim, so the new `type:"purchase"` / `amountBdt`
+fields flow through with **no Apps Script change** — only the two prompts (and
+the trigger gating above) need updating.
 
 ---
 
