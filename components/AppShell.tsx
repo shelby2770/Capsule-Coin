@@ -12,7 +12,7 @@ import { ValueTicker } from "@/components/ValueTicker";
 import { StoryMode } from "@/components/StoryMode";
 import { StandingBanner } from "@/components/StandingBanner";
 import { DarkCoinLogo } from "@/components/DarkCoinLogo";
-import { formatDC } from "@/lib/format";
+import { formatCC, formatDC } from "@/lib/format";
 import {
   LogOut,
   Wallet,
@@ -167,6 +167,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </Link>
           <Link href="/value" className="md:hidden" aria-label="CC value history">
             <ValueTicker compact />
+          </Link>
+          <Link
+            href="/dashboard"
+            className="chip border-gold-500/30 text-gold-300 hover:text-gold-200"
+            title="Your Capsule Coin balance — tap for your wallet"
+          >
+            <CoinLogo size={15} /> {formatCC(member?.balance ?? 0)}
+            <span className="hidden sm:inline">CC</span>
           </Link>
           <Link
             href="/convert"

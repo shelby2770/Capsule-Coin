@@ -169,7 +169,7 @@ function Leaderboard() {
       </div>
 
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-        <div className={`${isDc ? "dc-card" : "capsule-card"} p-4`}>
+        <div className={`${isDc ? "dc-card" : "cc-card"} p-4`}>
           <div className="flex items-center gap-2 text-xs text-mute">
             {isDc ? (
               <DarkCoinLogo size={16} />
@@ -209,7 +209,7 @@ function Leaderboard() {
         </div>
       )}
 
-      <section className={`${isDc ? "dc-card" : "capsule-card"} overflow-hidden`}>
+      <section className={`${isDc ? "dc-card" : "cc-card"} overflow-hidden`}>
         {loading && !data ? (
           <div className="flex items-center justify-center gap-2 py-16 text-mute">
             <Loader2 size={20} className={`animate-spin ${accent}`} /> Loading

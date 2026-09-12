@@ -79,6 +79,7 @@ export async function GET(
         direction,
         counterpartyName,
         amountCC: t.amountCC,
+        currency: t.currency,
         memo: t.memo,
         createdAt: t.createdAt,
       };
@@ -89,6 +90,7 @@ export async function GET(
     name: entry?.name || email,
     role: entry?.role || "Member",
     balance: round2(balance),
+    dcBalance: round2(member?.dcBalance ?? 0),
     joined: member?.verified ?? false,
     isYou: email === gate.identity.email,
     rank,

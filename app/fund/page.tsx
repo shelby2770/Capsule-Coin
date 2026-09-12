@@ -3,10 +3,24 @@
 import { useCallback, useEffect, useState } from "react";
 import { AppShell } from "@/components/AppShell";
 import { useAuth } from "@/components/AuthProvider";
-import { formatDC, toBanglaDigits } from "@/lib/format";
-import { Apple, Loader2, Plus, Sprout } from "lucide-react";
+import { DarkCoinLogo } from "@/components/DarkCoinLogo";
+import { formatBdt, formatDC, toBanglaDigits } from "@/lib/format";
+import { Apple, Crown, Loader2, Plus, Sparkles, Sprout } from "lucide-react";
 
-type Fund = { totalBdt: number; contributions: number; ministerEmail: string };
+type Fund = {
+  totalBdt: number;
+  contributions: number;
+  ministerEmail: string;
+  ministerName: string;
+};
+type Pricing = {
+  bdtPerCC: number;
+  perDcCc: number;
+  bdtPerDc: number;
+  multiplier: number;
+  supply: number;
+  tiers: Array<{ bdt: number; dc: number }>;
+};
 type Row = { name: string; email: string };
 
 export default function FundPage() {
@@ -20,6 +34,7 @@ export default function FundPage() {
 function Fund() {
   const { authedFetch, refresh } = useAuth();
   const [fund, setFund] = useState<Fund | null>(null);
+  const [pricing, setPricing] = useState<Pricing | null>(null);
   const [isMinister, setIsMinister] = useState(false);
   const [members, setMembers] = useState<Row[]>([]);
 
@@ -36,6 +51,7 @@ function Fund() {
       if (r.ok) {
         const d = await r.json();
         setFund(d.fund as Fund);
+        setPricing(d.pricing as Pricing);
         setIsMinister(Boolean(d.isMinister));
         if (d.isMinister) {
           const lr = await authedFetch("/api/leaderboard");
@@ -91,10 +107,7 @@ function Fund() {
     setBusy(false);
   };
 
-  const ministerName =
-    members.find((m) => m.email === fund?.ministerEmail)?.name ||
-    fund?.ministerEmail ||
-    "the Fruit Minister";
+  const ministerName = fund?.ministerName || "the Fruit Minister";
 
   return (
     <div className="stagger space-y-4">
@@ -108,7 +121,7 @@ function Fund() {
               Capsule Fruit Fund
             </h1>
             <p className="text-xs text-mute">
-              Every DC bought with real money feeds this fund, kept by {ministerName}.
+              Every DC bought with real money ripens this fund.
             </p>
           </div>
         </div>
@@ -122,6 +135,74 @@ function Fund() {
             from {fund?.contributions ?? 0} purchase{fund?.contributions === 1 ? "" : "s"}
           </span>
         </div>
+      </div>
+
+      {/* The Fruit Minister — keeper of the fund */}
+      <div className="relative overflow-hidden rounded-[28px] border border-gold-500/25 bg-gradient-to-br from-gold-500/[0.12] via-ink-700/70 to-teal-500/[0.06] p-6 shadow-glow">
+        <div className="flex items-center gap-4">
+          <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-gold-500/30 to-teal-500/15 text-gold-300 shadow-glow">
+            <Crown size={30} />
+          </div>
+          <div className="min-w-0">
+            <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-gold-300/90">
+              <Sparkles size={12} /> Fruit Minister
+            </div>
+            <h2 className="mt-1 truncate font-display text-2xl font-bold text-white">
+              {ministerName}
+            </h2>
+            <p className="mt-0.5 text-xs text-mute">
+              Keeper of the Capsule Fruit Fund — every taka spent on DC ripens in
+              his care.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Buy DC at today's market price */}
+      <div className="dc-card p-6">
+        <div className="flex items-center gap-2">
+          <DarkCoinLogo size={20} />
+          <h2 className="font-display text-lg font-semibold text-white">
+            Buy DC with taka
+          </h2>
+        </div>
+        <p className="mt-1 text-xs text-mute">
+          At today&apos;s market price —{" "}
+          <span className="font-semibold text-ember-300">
+            1 DC ≈ ৳{pricing ? formatBdt(pricing.bdtPerDc) : "—"}
+          </span>{" "}
+          {pricing && (
+            <>({pricing.perDcCc} CC each · scarcity ×{pricing.multiplier})</>
+          )}
+          . Tracks the live CC rate and DC scarcity, so it moves with the market.
+        </p>
+
+        <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {(pricing?.tiers ?? [{ bdt: 100, dc: 0 }, { bdt: 200, dc: 0 }, { bdt: 500, dc: 0 }, { bdt: 1000, dc: 0 }]).map(
+            (t) => (
+              <div
+                key={t.bdt}
+                className="rounded-2xl border border-ember-500/20 bg-ember-500/[0.06] p-4 text-center"
+              >
+                <div className="font-display text-lg font-semibold text-white">
+                  ৳{toBanglaDigits(t.bdt.toLocaleString())}
+                </div>
+                <div className="mt-0.5 text-[11px] uppercase tracking-wide text-mute">
+                  buys
+                </div>
+                <div className="mt-1 font-display text-xl font-bold text-gradient-ember">
+                  {pricing ? formatDC(t.dc) : "—"}
+                </div>
+                <div className="text-[11px] font-semibold text-ember-300/80">DC</div>
+              </div>
+            ),
+          )}
+        </div>
+
+        <p className="mt-3 text-[11px] text-mute">
+          A guide only — {ministerName} records the actual DC and taka for each
+          purchase.
+        </p>
       </div>
 
       {isMinister && (

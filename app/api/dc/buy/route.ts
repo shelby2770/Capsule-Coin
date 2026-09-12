@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireMember } from "@/lib/auth/verify";
 import {
   buyDcWithMoney,
+  dcBuyPricing,
   fruitFundStatus,
   isFruitMinister,
 } from "@/lib/excel/store";
@@ -14,9 +15,10 @@ export const dynamic = "force-dynamic";
 export async function GET(req: Request) {
   const gate = await requireMember(req);
   if (!gate.ok) return gateResponse(gate.status);
-  const fund = await fruitFundStatus();
+  const [fund, pricing] = await Promise.all([fruitFundStatus(), dcBuyPricing()]);
   return NextResponse.json({
     fund,
+    pricing,
     isMinister: isFruitMinister(gate.identity.email),
   });
 }

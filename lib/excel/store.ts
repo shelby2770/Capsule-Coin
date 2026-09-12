@@ -4,6 +4,7 @@ import ExcelJS from "exceljs";
 import { createHash, randomUUID, randomBytes, randomInt } from "crypto";
 import { config } from "@/lib/config";
 import { round2 } from "@/lib/format";
+import { valueReport } from "@/lib/value";
 import { roleFor, isAllowed, allowlistEntry, ALLOWLIST } from "@/lib/allowlist";
 import { adminDb } from "@/lib/firebase/admin";
 import type {
@@ -1932,14 +1933,58 @@ export type FruitFundStatus = {
   totalBdt: number;
   contributions: number;
   ministerEmail: string;
+  ministerName: string;
 };
 
 export async function fruitFundStatus(): Promise<FruitFundStatus> {
   const s = await ensureLoaded();
+  const ministerEmail = config.dc.fruitMinisterEmail;
   return {
     totalBdt: round2(s.fruitFundBdt ?? 0),
     contributions: s.transactions.filter((t) => t.type === "PURCHASE").length,
-    ministerEmail: config.dc.fruitMinisterEmail,
+    ministerEmail,
+    ministerName: allowlistEntry(ministerEmail)?.name || ministerEmail,
+  };
+}
+
+export type DcBuyPricing = {
+  bdtPerCC: number; // live CC market price (৳)
+  perDcCc: number; // CC value of 1 DC at current scarcity (its best convert-back rate)
+  bdtPerDc: number; // taka to buy 1 DC at today's market price
+  multiplier: number; // scarcity multiplier m(S)
+  supply: number; // total DC in circulation
+  tiers: Array<{ bdt: number; dc: number }>; // how much DC common taka amounts buy
+};
+
+/**
+ * Reference pricing for buying DC with real money, derived from the LIVE market:
+ * 1 DC is worth its best convert-back rate (bulkMax · scarcity m(S)) in CC, and
+ * 1 CC is worth today's ৳ rate — so ৳/DC = bulkMax · m(S) · bdtPerCC. Pricing DC
+ * at its top convert rate keeps buying arbitrage-free (you can't buy DC then
+ * convert it straight back for a profit). The Fruit Minister still records the
+ * actual figures; this only powers the on-screen guide.
+ */
+export async function dcBuyPricing(): Promise<DcBuyPricing> {
+  const s = await ensureLoaded();
+  const v = valueReport(s, Date.now());
+  const supply = totalDcSupply(s);
+  const c = config.dc;
+  const S = Math.max(1, supply); // near-empty market reads "scarce"
+  const rawM = Math.pow(c.refSupply / S, c.supplyGamma);
+  const m = Math.min(c.clampMax, Math.max(c.clampMin, rawM));
+  const perDcCc = round2(c.bulkMax * m);
+  const bdtPerDc = round2(perDcCc * v.bdtPerCC);
+  const tiers = [100, 200, 500, 1000].map((bdt) => ({
+    bdt,
+    dc: bdtPerDc > 0 ? round2(bdt / bdtPerDc) : 0,
+  }));
+  return {
+    bdtPerCC: v.bdtPerCC,
+    perDcCc,
+    bdtPerDc,
+    multiplier: round2(m),
+    supply: round2(supply),
+    tiers,
   };
 }
 

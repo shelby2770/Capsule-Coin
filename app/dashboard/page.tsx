@@ -171,43 +171,82 @@ function WalletHome() {
 
   return (
     <div className="space-y-4">
-      <section className="capsule-card flex flex-col items-center gap-6 p-8 sm:flex-row sm:justify-between">
-        <div>
-          <div className="flex items-center gap-2 text-sm text-mute">
-            <Wallet size={16} className="text-gold-400" /> Your balance
+      <div className="px-1">
+        <h1 className="font-display text-xl font-bold text-white">Your wallet</h1>
+        <p className="text-sm text-mute">
+          Welcome back, {member?.name?.split(" ")[0]}.{" "}
+          {balance === 0 && dcBalance === 0
+            ? "Head to Mine to forge your first DC."
+            : "Mine DC, convert to CC, or trade on the market."}
+        </p>
+      </div>
+
+      <section className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        {/* Capsule Coin — the everyday currency */}
+        <div className="capsule-card relative overflow-hidden p-6">
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 text-sm text-mute">
+                <Wallet size={16} className="text-gold-400" /> Your CC balance
+              </div>
+              <div className="mt-2 flex items-baseline gap-2">
+                <CountUp
+                  value={balance}
+                  format={formatCC}
+                  className="text-4xl font-bold text-white sm:text-5xl"
+                />
+                <span className="text-lg font-semibold text-gold-400">CC</span>
+              </div>
+              {value && (
+                <div className="mt-1 text-xs text-mute">
+                  ≈ ৳{formatBdt(Math.abs(balance) * value.bdtPerCC)}
+                  {balance < 0 ? " (debt)" : ""} at today&apos;s rate
+                </div>
+              )}
+              <Link
+                href="/market"
+                className="mt-3 inline-flex items-center gap-1 text-xs text-gold-300/80 transition hover:text-gold-300"
+              >
+                Trade on the market <ArrowRight size={13} />
+              </Link>
+            </div>
+            <CoinLogo size={72} glow className="shrink-0 animate-float" />
           </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <CountUp
-              value={balance}
-              format={formatCC}
-              className="text-5xl font-bold text-white"
-            />
-            <span className="text-xl font-semibold text-gold-400">CC</span>
-          </div>
-          <div className="mt-2 flex items-center gap-2">
-            <DarkCoinLogo size={18} />
-            <CountUp
-              value={dcBalance}
-              format={formatDC}
-              className="text-lg font-semibold text-ember-300"
-            />
-            <span className="text-sm font-semibold text-ember-400">DC</span>
-            <Link
-              href="/convert"
-              className="text-xs text-mute underline-offset-2 hover:text-ember-300 hover:underline"
-            >
-              convert →
-            </Link>
-          </div>
-          <p className="mt-2 max-w-sm text-sm text-mute">
-            Welcome, {member?.name?.split(" ")[0]}.{" "}
-            {balance === 0 && dcBalance === 0
-              ? "Head to Mine to forge your first DC."
-              : "Mine DC, convert to CC, or trade on the market."}
-          </p>
         </div>
-        <div className="animate-float">
-          <CoinLogo size={104} glow />
+
+        {/* Dark Capsule Coin — the elite, mined currency */}
+        <div className="dc-card relative overflow-hidden p-6">
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 text-sm text-mute">
+                <DarkCoinLogo size={16} /> Your DC balance
+              </div>
+              <div className="mt-2 flex items-baseline gap-2">
+                <CountUp
+                  value={dcBalance}
+                  format={formatDC}
+                  className="text-4xl font-bold text-white sm:text-5xl"
+                />
+                <span className="text-lg font-semibold text-ember-400">DC</span>
+              </div>
+              <div className="mt-1 text-xs text-mute">Elite coin — mine it, convert to CC.</div>
+              <div className="mt-3 flex items-center gap-4 text-xs">
+                <Link
+                  href="/convert"
+                  className="inline-flex items-center gap-1 text-ember-300/90 transition hover:text-ember-200"
+                >
+                  Convert to CC <ArrowRight size={13} />
+                </Link>
+                <Link
+                  href="/mine"
+                  className="inline-flex items-center gap-1 text-mute transition hover:text-white"
+                >
+                  <Pickaxe size={13} /> Mine
+                </Link>
+              </div>
+            </div>
+            <DarkCoinLogo size={64} glow className="shrink-0 animate-float" />
+          </div>
         </div>
       </section>
 

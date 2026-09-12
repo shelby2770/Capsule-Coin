@@ -7,7 +7,8 @@ import { AppShell } from "@/components/AppShell";
 import { BalanceHistoryCard } from "@/components/BalanceHistoryCard";
 import { useAuth } from "@/components/AuthProvider";
 import { useValue } from "@/lib/useValue";
-import { formatCC, formatBdt, balanceStanding } from "@/lib/format";
+import { formatCC, formatDC, formatBdt, balanceStanding } from "@/lib/format";
+import { DarkCoinLogo } from "@/components/DarkCoinLogo";
 import { LEDGER_EVENT } from "@/lib/ledgerEvents";
 import {
   ArrowLeft,
@@ -30,6 +31,7 @@ type Tx = {
   direction: "in" | "out" | "mine" | "burn" | "adjust";
   counterpartyName: string;
   amountCC: number;
+  currency?: "CC" | "DC";
   memo: string;
   createdAt: string;
 };
@@ -38,6 +40,7 @@ type Profile = {
   name: string;
   role: string;
   balance: number;
+  dcBalance: number;
   joined: boolean;
   isYou: boolean;
   rank: number;
@@ -90,11 +93,25 @@ function BackLink() {
   );
 }
 
-function StatCard({ icon: I, label, value, tone }: { icon: Icon; label: string; value: string; tone?: string }) {
+function StatCard({
+  icon: I,
+  iconNode,
+  label,
+  value,
+  tone,
+  iconTone,
+}: {
+  icon?: Icon;
+  iconNode?: React.ReactNode;
+  label: string;
+  value: string;
+  tone?: string;
+  iconTone?: string;
+}) {
   return (
     <div className="capsule-card p-4">
       <div className="flex items-center gap-2 text-xs text-mute">
-        <I size={14} className="text-gold-400" /> {label}
+        {iconNode ?? (I && <I size={14} className={iconTone ?? "text-gold-400"} />)} {label}
       </div>
       <div className={`mt-1 text-xl font-bold ${tone ?? "text-white"}`}>{value}</div>
     </div>
@@ -109,7 +126,7 @@ function describe(t: Tx): { Icon: Icon; tone: string; amtTone: string; sign: str
     case "out":
       return { Icon: ArrowUpRight, tone: "text-gold-300", amtTone: "text-white", sign: "−", text: `Sent to ${t.counterpartyName}${memo}` };
     case "mine":
-      return { Icon: Pickaxe, tone: "text-teal-300", amtTone: "text-teal-300", sign: "+", text: `Mined${memo}` };
+      return { Icon: Pickaxe, tone: "text-ember-400", amtTone: "text-ember-300", sign: "+", text: `Mined${memo}` };
     case "burn":
       return { Icon: Flame, tone: "text-orange-300", amtTone: "text-orange-300", sign: "−", text: "Burned to unlock mining" };
     default:
@@ -192,8 +209,9 @@ function MemberProfile() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-        <StatCard icon={Wallet} label="Balance" value={`${formatCC(p.balance)} CC`} tone={negative ? "text-red-300" : "text-gold-300"} />
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+        <StatCard icon={Wallet} label="CC balance" value={`${formatCC(p.balance)} CC`} tone={negative ? "text-red-300" : "text-gold-300"} />
+        <StatCard iconNode={<DarkCoinLogo size={14} />} label="DC balance" value={`${formatDC(p.dcBalance)} DC`} tone="text-ember-300" />
         <StatCard icon={Trophy} label="Rank" value={`#${p.rank} of ${p.memberCount}`} />
         <StatCard
           icon={PieChart}
@@ -212,7 +230,7 @@ function MemberProfile() {
         <StatCard icon={ArrowDownLeft} label="Received" value={`${formatCC(p.stats.received)} CC`} tone="text-teal-300" />
         <StatCard icon={ArrowUpRight} label="Sent" value={`${formatCC(p.stats.sent)} CC`} />
         <StatCard icon={ArrowLeftRight} label="Trades" value={`${p.stats.tradeCount}`} />
-        <StatCard icon={Pickaxe} label={`Mined (${p.stats.timesMined}×)`} value={`${formatCC(p.stats.totalMined)} CC`} tone="text-teal-300" />
+        <StatCard icon={Pickaxe} iconTone="text-ember-400" label={`Mined (${p.stats.timesMined}×)`} value={`${formatDC(p.stats.totalMined)} DC`} tone="text-ember-300" />
       </div>
 
       <BalanceHistoryCard slug={slug} />
@@ -227,6 +245,8 @@ function MemberProfile() {
           <ul className="divide-y divide-white/5">
             {p.transactions.map((t) => {
               const d = describe(t);
+              const cur = t.currency ?? "CC";
+              const fmt = cur === "DC" ? formatDC : formatCC;
               return (
                 <li key={t.seq} className="flex items-center gap-3 px-4 py-3 sm:px-6">
                   <d.Icon size={16} className={`shrink-0 ${d.tone}`} />
@@ -236,7 +256,7 @@ function MemberProfile() {
                   </div>
                   <div className={`shrink-0 text-sm font-semibold ${d.amtTone}`}>
                     {d.sign}
-                    {formatCC(t.amountCC)} <span className="text-xs text-mute">CC</span>
+                    {fmt(t.amountCC)} <span className="text-xs text-mute">{cur}</span>
                   </div>
                 </li>
               );
