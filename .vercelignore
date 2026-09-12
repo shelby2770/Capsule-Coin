@@ -1,2 +1,15 @@
 # Never deploy dev-only staged custom tokens (exchangeable Firebase tokens).
 public/__devtokens.json
+
+# Secrets — must never leave this machine (prod uses FIREBASE_ADMIN_SERVICE_ACCOUNT env).
+*firebase-adminsdk*.json
+serviceAccount*.json
+.env
+.env*.local
+
+# Runtime ledger data + prod backups (member balances).
+data
+
+# Deps / build artifacts — Vercel rebuilds these remotely.
+node_modules
+.next
