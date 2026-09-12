@@ -4,7 +4,6 @@ import ExcelJS from "exceljs";
 import { createHash, randomUUID, randomBytes, randomInt } from "crypto";
 import { config } from "@/lib/config";
 import { round2 } from "@/lib/format";
-import { valueReport } from "@/lib/value";
 import { roleFor, isAllowed, allowlistEntry, ALLOWLIST } from "@/lib/allowlist";
 import { adminDb } from "@/lib/firebase/admin";
 import type {
@@ -1852,41 +1851,29 @@ function dcConvertedToday(s: LedgerState, email: string, nowMs: number): number 
  * Pure DC->CC quote. CC = x * b(x) * m(S):
  *   b(x) = bulkMax - bulkSpread * e^(-x/bulkScale)               (bounded bulk bonus)
  *   m(S) = clamp((refSupply/S)^supplyGamma, clampMin, clampMax)  (scarcity = value)
- * Trimmed so the per-DC CC rate never exceeds DC's real-money BUY value (৳ per DC
- * = 100/buyDcPer100, converted to CC at the live bdtPerCC): you can't buy DC cheap
- * and convert it straight back for a profit. The cap only applies when bdtPerCC is
- * supplied (the convert paths pass it); the natural curve applies below the cap
- * (e.g. when DC is abundant/cheap). Returns CC out, the effective per-DC rate, the
- * supply multiplier, and whether the buy-value cap bound the rate.
+ * S = total DC held across all members, so the whole group's DC supply sets the
+ * rate (more DC in circulation → lower rate). Independent of the money→DC buy rate:
+ * real money buying DC is intentionally the only exceptional, generous side.
+ * Returns CC out, the effective per-DC rate, and the supply multiplier.
  */
 export function quoteDcToCc(
   dcAmount: number,
   dcSupply: number,
-  bdtPerCC?: number,
-): { cc: number; perDc: number; multiplier: number; capped: boolean } {
+): { cc: number; perDc: number; multiplier: number } {
   const c = config.dc;
   const x = Math.max(0, Number(dcAmount) || 0);
   const bulk = c.bulkMax - c.bulkSpread * Math.exp(-x / Math.max(1e-9, c.bulkScale));
   const S = Math.max(1, dcSupply); // guard div-by-zero; a near-empty market reads "scarce"
   const rawM = Math.pow(c.refSupply / S, c.supplyGamma);
   const m = Math.min(c.clampMax, Math.max(c.clampMin, rawM));
-  let perDc = Math.max(0, bulk * m);
-  let capped = false;
-  if (bdtPerCC && bdtPerCC > 0 && c.buyDcPer100 > 0) {
-    const buyValueCcPerDc = 100 / c.buyDcPer100 / bdtPerCC; // ৳0.885/DC in CC terms
-    if (perDc > buyValueCcPerDc) {
-      perDc = buyValueCcPerDc;
-      capped = true;
-    }
-  }
-  return { cc: round2(x * perDc), perDc: round2(perDc), multiplier: round2(m), capped };
+  const perDc = Math.max(0, bulk * m);
+  return { cc: round2(x * perDc), perDc: round2(perDc), multiplier: round2(m) };
 }
 
 export type DcConvertStatus = {
   dcBalance: number;
   ccBalance: number;
   supply: number;
-  bdtPerCC: number; // live ৳/CC — lets the quote apply the buy-value cap
   minConvert: number;
   dailyCapDc: number;
   convertedToday: number;
@@ -1902,7 +1889,6 @@ export async function dcConvertStatus(email: string): Promise<DcConvertStatus> {
     dcBalance: round2(me?.dcBalance ?? 0),
     ccBalance: round2(me?.balance ?? 0),
     supply: totalDcSupply(s),
-    bdtPerCC: valueReport(s, Date.now()).bdtPerCC,
     minConvert: config.dc.minConvert,
     dailyCapDc: config.dc.dailyCapDc,
     convertedToday,
@@ -1949,8 +1935,7 @@ export async function convertDcToCc(
       );
     }
     const supply = totalDcSupply(draft);
-    const bdtPerCC = valueReport(draft, now).bdtPerCC;
-    const { cc, perDc, multiplier } = quoteDcToCc(x, supply, bdtPerCC);
+    const { cc, perDc, multiplier } = quoteDcToCc(x, supply);
     if (cc <= 0) {
       throw new LedgerError("INVALID", "That converts to 0 CC at the moment.");
     }

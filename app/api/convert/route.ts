@@ -22,11 +22,7 @@ export async function GET(req: Request) {
 
   const status = await dcConvertStatus(gate.identity.email);
   const dc = Number(new URL(req.url).searchParams.get("dc") || "0");
-  const quote = quoteDcToCc(
-    Number.isFinite(dc) ? dc : 0,
-    status.supply,
-    status.bdtPerCC,
-  );
+  const quote = quoteDcToCc(Number.isFinite(dc) ? dc : 0, status.supply);
   return NextResponse.json({ ...status, quote });
 }
 

@@ -8,12 +8,11 @@ import { StandingBanner } from "@/components/StandingBanner";
 import { formatCC, formatDC, round2 } from "@/lib/format";
 import { Repeat, Flame, Loader2, ArrowRight, TrendingUp, TrendingDown } from "lucide-react";
 
-type Quote = { cc: number; perDc: number; multiplier: number; capped?: boolean };
+type Quote = { cc: number; perDc: number; multiplier: number };
 type Status = {
   dcBalance: number;
   ccBalance: number;
   supply: number;
-  bdtPerCC: number;
   minConvert: number;
   dailyCapDc: number;
   convertedToday: number;
@@ -121,7 +120,7 @@ function Convert() {
               Convert <span className="text-gradient-ember">DC → CC</span>
             </h1>
             <p className="text-xs text-mute">
-              Turn DC back into CC — at up to its real-money buy value.
+              Bigger conversions earn a better rate; scarcer DC is worth more CC.
             </p>
           </div>
         </div>
@@ -170,20 +169,14 @@ function Convert() {
           {quote && (
             <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-mute">
               <span>Rate {quote.perDc} CC / DC</span>
-              {quote.capped ? (
-                <span className="inline-flex items-center gap-1 text-ember-300">
-                  <Flame size={13} /> matched to the DC buy price
-                </span>
-              ) : (
-                <span className="inline-flex items-center gap-1">
-                  {quote.multiplier >= 1 ? (
-                    <TrendingUp size={13} className="text-teal-400" />
-                  ) : (
-                    <TrendingDown size={13} className="text-ember-400" />
-                  )}
-                  supply ×{quote.multiplier}
-                </span>
-              )}
+              <span className="inline-flex items-center gap-1">
+                {quote.multiplier >= 1 ? (
+                  <TrendingUp size={13} className="text-teal-400" />
+                ) : (
+                  <TrendingDown size={13} className="text-ember-400" />
+                )}
+                supply ×{quote.multiplier}
+              </span>
             </div>
           )}
         </div>
