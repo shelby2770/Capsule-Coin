@@ -119,6 +119,9 @@ export const config = {
     // Reject amounts above this — a guard against mis-parsed free text
     // ("...for 4000 cc"). The largest real trade to date is 300 CC.
     maxCc: num(process.env.DESERT_HOUSE_MAX_CC, 1000),
+    // Same guard for real-money DC purchases reported in chat (taka). Buy tiers
+    // top out at ৳1000; allow some headroom, reject clearly mis-parsed amounts.
+    maxBdt: num(process.env.DESERT_HOUSE_MAX_BDT, 5000),
   },
   // Anti-bot rate limit: more than `max` create-requests within `windowMs`
   // triggers a temporary block ("ban") for `blockMs`.

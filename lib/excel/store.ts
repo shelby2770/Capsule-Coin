@@ -1523,6 +1523,120 @@ export async function recordDesertHouseTrade(input: {
   });
 }
 
+export type DesertHousePurchaseResult = {
+  recorded: boolean; // false when it was a duplicate (no-op)
+  duplicate: boolean;
+  txId: string | null;
+  buyer: { email: string; name: string; dcBalance: number };
+  dcCredited: number;
+  bdtPaid: number;
+  fruitFundBdt: number;
+  message: string; // human line the flow can echo back into the space
+};
+
+/**
+ * Record a real-money DC purchase reported in the DesertHouse chat ("Riaz paid
+ * 500 taka to fruit fund for Eid"). Money is settled offline; this credits the
+ * buyer's DC (computed from the taka via the stable buy curve, `dcForBdt`) and
+ * tallies the taka into the Capsule Fruit Fund — the same effect as the Minister
+ * recording it on the /fund page.
+ *
+ * Safety: ONLY the Fruit Minister may report these — real money moves, so only
+ * the fund's keeper can attest it (authorEmail must equal the trusted Chat
+ * sender, checked here against config.dc.fruitMinisterEmail; Gemini also gates
+ * it, but this is the authoritative check). Idempotent on externalId.
+ */
+export async function recordDesertHousePurchase(input: {
+  authorEmail: string; // Chat message author — MUST be the Fruit Minister
+  buyerEmail: string; // who receives the DC
+  bdtPaid: number; // taka paid into the fund
+  reason?: string; // free-text purpose ("Eid")
+  externalId?: string; // Chat message id, for idempotency
+  rawText?: string; // original message text (audit only)
+}): Promise<DesertHousePurchaseResult> {
+  const authorEmail = cleanEmail(input.authorEmail);
+  const buyerEmail = cleanEmail(input.buyerEmail);
+  const bdtPaid = round2(Number(input.bdtPaid));
+  const reason = (input.reason || "").trim();
+  const externalId = (input.externalId || "").trim();
+
+  return mutate((draft): DesertHousePurchaseResult => {
+    // Author gate: only the Fruit Minister can attest a real-money top-up.
+    if (!isFruitMinister(authorEmail)) {
+      throw new LedgerError(
+        "NOT_PARTICIPANT",
+        "Only the Fruit Minister can record a taka → DC purchase.",
+      );
+    }
+    if (!isAllowed(buyerEmail)) {
+      throw new LedgerError("NOT_MEMBER", "That buyer isn't a Capsule member.");
+    }
+    if (!Number.isFinite(bdtPaid) || bdtPaid <= 0) {
+      throw new LedgerError("INVALID", "Say how much taka was paid.");
+    }
+    if (bdtPaid > config.desertHouse.maxBdt) {
+      throw new LedgerError(
+        "INVALID",
+        `That taka amount looks too large (max ৳${config.desertHouse.maxBdt}) — record big purchases on the /fund page.`,
+      );
+    }
+    const dcCredited = dcForBdt(bdtPaid);
+    if (dcCredited <= 0) {
+      throw new LedgerError("INVALID", "That taka amount converts to 0 DC.");
+    }
+
+    const buyer = ensureMemberDraft(
+      draft,
+      buyerEmail,
+      allowlistEntry(buyerEmail)?.name || buyerEmail,
+    );
+
+    // Idempotency: a re-fired flow / re-delivered message is a no-op.
+    if (externalId) {
+      const prior = draft.transactions.find((t) => t.externalId === externalId);
+      if (prior) {
+        return {
+          recorded: false,
+          duplicate: true,
+          txId: prior.id,
+          buyer: { email: buyer.email, name: buyer.name, dcBalance: buyer.dcBalance },
+          dcCredited: prior.amountCC,
+          bdtPaid,
+          fruitFundBdt: round2(draft.fruitFundBdt ?? 0),
+          message: "Already recorded — no change.",
+        };
+      }
+    }
+
+    assertNotBanned(buyer); // a banned member can't receive DC either
+
+    buyer.dcBalance = round2(buyer.dcBalance + dcCredited);
+    draft.fruitFundBdt = round2((draft.fruitFundBdt ?? 0) + bdtPaid);
+
+    const tx = appendTransaction(draft, {
+      type: "PURCHASE",
+      currency: "DC",
+      fromEmail: null,
+      toEmail: buyer.email,
+      amountCC: dcCredited,
+      offerId: null,
+      memo: `Bought ${dcCredited} DC for ৳${bdtPaid} → Fruit Fund${reason ? ` — ${reason}` : ""} · ${DESERT_HOUSE_MEMO_TAG}`,
+      externalId: externalId || null,
+    });
+
+    return {
+      recorded: true,
+      duplicate: false,
+      txId: tx.id,
+      buyer: { email: buyer.email, name: buyer.name, dcBalance: buyer.dcBalance },
+      dcCredited,
+      bdtPaid,
+      fruitFundBdt: draft.fruitFundBdt,
+      message: `✅ Recorded (DC purchase): ${buyer.name} +${dcCredited} DC for ৳${bdtPaid}${reason ? ` (${reason})` : ""}. Fruit Fund is now ৳${draft.fruitFundBdt}.`,
+    };
+  });
+}
+
 // ── Mining v2 — collision-lottery (Phase 5 rebuild) ─────────────────────────
 function dayKey(nowMs: number): string {
   return new Date(nowMs).toISOString().slice(0, 10); // UTC yyyy-mm-dd
@@ -2040,16 +2154,25 @@ export type DcBuyPricing = {
  * governs the exit — the DC→CC convert; this on-ramp is intentionally simple and
  * stable.) The Fruit Minister still records the actual figures; this is the guide.
  */
+/**
+ * DC credited for a real-money purchase of `bdt` taka — the stable anchor curve:
+ * ৳100 → buyDcPer100 exactly, and bigger buys earn a bounded volume bonus on top
+ * (৳200 > 2×, ৳500 > 5×, …). Deliberately decoupled from the volatile CC spread.
+ * Shared by the Fruit-Fund pricing guide AND the DesertHouse purchase path so the
+ * quoted rate and the recorded rate can never drift apart.
+ */
+export function dcForBdt(bdt: number): number {
+  const c = config.dc;
+  const amt = Math.max(0, Number(bdt) || 0);
+  const volMult = (x: number) =>
+    1 + c.buyBonusMax * (1 - Math.exp(-x / Math.max(1, c.buyBonusScale)));
+  return round2((amt / 100) * c.buyDcPer100 * (volMult(amt) / volMult(100)));
+}
+
 export async function dcBuyPricing(): Promise<DcBuyPricing> {
   const c = config.dc;
   const per100 = c.buyDcPer100;
-  const volMult = (bdt: number) =>
-    1 + c.buyBonusMax * (1 - Math.exp(-bdt / Math.max(1, c.buyBonusScale)));
-  const anchorMult = volMult(100); // normalize so ৳100 lands exactly on the anchor
-  const dcFor = (bdt: number) =>
-    round2((bdt / 100) * per100 * (volMult(bdt) / anchorMult));
-
-  const raw = [100, 200, 500, 1000].map((bdt) => ({ bdt, dc: dcFor(bdt) }));
+  const raw = [100, 200, 500, 1000].map((bdt) => ({ bdt, dc: dcForBdt(bdt) }));
   // Bonus vs the ৳100 tier's DC/taka, so the "bigger = better" step is visible.
   const rate0 = raw[0].dc > 0 ? raw[0].dc / raw[0].bdt : 0;
   const tiers = raw.map((t) => ({

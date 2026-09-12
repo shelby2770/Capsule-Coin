@@ -1,69 +1,230 @@
-# DesertHouse → DC routing (Google-side change)
+# DesertHouse → Capsule Coin routing (Google-side + app)
 
-Dark Capsule Coin (DC) is spent on **non-food** trades; **food** stays in CC. The app
-can't tell food from non-food (item text is free-form), so **Gemini** must classify it
-and tell the app which currency to use.
+The DesertHouse Chat space is watched by a Google Workspace Studio Flow. Two
+Gemini steps decide what happened, then a webhook POSTs the result to the app,
+which settles it on the ledger (and mirrors to the Google Sheet).
 
-## App side (already done)
+Three things can be recorded:
 
-`POST /api/desert-house/trade` now accepts a currency signal on the trade object, in
-priority order:
+1. **Food trade → CC.** Food/drink bought or sold between two members, priced in CC.
+2. **Non-food trade → DC.** Anything not edible (gadgets, gifts, services, lending),
+   priced in DC. The buyer must actually hold the DC (no credit line for DC).
+3. **Taka → DC purchase (Fruit Fund).** Real money paid into the Capsule Fruit
+   Fund in exchange for DC. **Only the Fruit Minister (Jakir) may report this.**
 
-1. `currency`: `"CC"` or `"DC"` (explicit) — **preferred**
-2. `isFood`: `true` → CC, `false` → DC
-3. neither given → defaults to **CC** (safe: DesertHouse is mostly food)
+**Currency is tied to the item type — this is strict.** Food may ONLY be CC;
+non-food may ONLY be DC. A message that pairs the wrong coin with the item (a
+burger "for 10 DC", earbuds "for 20 CC") is rejected at step 2 (Gemini answers
+`no`) and never reaches the app.
 
-DC trades settle out of the buyer's **DC** wallet (no credit line — the buyer must
-actually hold the DC; otherwise the trade is rejected with `INSUFFICIENT_DC`). CC
-trades behave exactly as before.
+---
 
-Everything else is unchanged: same token auth, same idempotency (`messageId`), same
-`?format=text` reply option.
+## App side (implemented)
 
-## Gemini side (what to change)
+`POST /api/desert-house/trade` — one endpoint, two payload shapes. Auth is the
+static `DESERT_HOUSE_TOKEN` (in the JSON body as `{"token": "..."}`, since the
+Studio webhook step has no custom headers; `Authorization: Bearer <token>` also
+works for curl). `?format=text` returns just the one-line reply for the Flow's
+"post a message" step. Every write is idempotent on `messageId` (a re-fired flow
+never double-charges).
 
-Add currency classification to the Gemini step that extracts the trade. Update the
-**output JSON schema** to include a `currency` field, and add a classification rule to
-the prompt.
-
-### Add to the prompt (classification rule)
-
-```
-Also classify what was traded:
-- If the item is FOOD or drink (meals, snacks, tea/coffee, groceries, restaurant
-  orders, etc.), set "currency": "CC".
-- If the item is NON-FOOD (gadgets, accessories, clothes, books, services, lending,
-  gifts, tickets, anything not edible), set "currency": "DC".
-- If unsure, default to "CC".
-```
-
-### Updated JSON the flow POSTs (the `gem`/`trade` object)
+### Trade payload (kinds 1 & 2)
 
 ```json
 {
-  "isTrade": true,
-  "sellerEmail": "seller@orbitax.com",
-  "buyerEmail": "buyer@orbitax.com",
-  "item": "Wireless earbuds",
-  "amountCC": 20,
-  "currency": "DC"
+  "token": "<DESERT_HOUSE_TOKEN>",
+  "authorEmail": "buyer-or-seller@orbitax.com",
+  "messageId": "<chat message id>",
+  "gem": {
+    "type": "trade",
+    "isTrade": true,
+    "sellerEmail": "seller@orbitax.com",
+    "buyerEmail": "buyer@orbitax.com",
+    "item": "Earbuds",
+    "amountCC": 20,
+    "currency": "DC"
+  }
 }
 ```
 
-(For a food trade, `"item": "Burger"`, `"currency": "CC"`.)
+`amountCC` is the amount in the trade's `currency` (CC for food, DC for non-food).
+`currency` is preferred; an `isFood: true|false` boolean is also accepted (true→CC,
+false→DC); the safe default is CC. One of seller/buyer must equal `authorEmail`.
 
-No other flow steps change. If you'd rather emit a boolean, send `"isFood": true|false`
-instead of `currency` — the app maps it the same way.
+### Purchase payload (kind 3 — Fruit Fund top-up)
 
-## Quick test (curl)
-
-```bash
-# Non-food -> DC (buyer must hold >= 20 DC)
-curl -s -X POST "$APP_URL/api/desert-house/trade?format=text" \
-  -H "content-type: application/json" \
-  -d '{"token":"<DESERT_HOUSE_TOKEN>","authorEmail":"buyer@orbitax.com",
-       "gem":{"isTrade":true,"sellerEmail":"seller@orbitax.com",
-       "buyerEmail":"buyer@orbitax.com","item":"Earbuds","amountCC":20,"currency":"DC"}}'
+```json
+{
+  "token": "<DESERT_HOUSE_TOKEN>",
+  "authorEmail": "jakir.hossen@orbitax.com",
+  "messageId": "<chat message id>",
+  "gem": {
+    "type": "purchase",
+    "isTrade": true,
+    "buyerEmail": "riaz.khan@orbitax.com",
+    "amountBdt": 500,
+    "reason": "Eid"
+  }
+}
 ```
 
-The reply echoes the currency, e.g. `✅ Recorded (DC): Earbuds — … +20 DC, … -20 DC`.
+- The app credits the buyer's **DC computed from the taka** (the stable buy curve:
+  ৳100 → ~113 DC, bigger buys earn a bounded bonus — ৳500 → ~682 DC) and adds the
+  **taka to the Fruit Fund**. Gemini must NOT compute DC; the app does.
+- **`authorEmail` must be the Fruit Minister** (`jakir.hossen@orbitax.com`). The
+  app enforces this against the *trusted Chat author* (not the message text), so
+  it can't be spoofed. Non-Minister → rejected (`NOT_PARTICIPANT`).
+- `reason` is free text (optional). Amount is capped by `DESERT_HOUSE_MAX_BDT`.
+
+The endpoint auto-detects a purchase from `type: "purchase"` or the presence of
+`amountBdt`; otherwise it's treated as a trade.
+
+---
+
+## Gemini side (what to paste into the two Studio steps)
+
+Both steps now also receive **AUTHOR_EMAIL** from step 1 (the trusted Chat
+sender). If your step 2 currently only passes MESSAGE_TEXT, add AUTHOR_EMAIL too.
+
+### Step 2 — the yes/no gate
+
+```
+You are the first gate for the Capsule Coin ledger. Decide whether the message
+reports ONE recordable event of the kinds below. Reply with exactly one
+lowercase word — yes or no — nothing else. No punctuation, no explanation.
+
+INPUT:
+- MESSAGE_TEXT: the chat message
+- AUTHOR_EMAIL: the sender's email (trusted)
+
+Two coins, tied to what was traded:
+- CC (also "cc", "coin", "Capsule Coin") is for FOOD only — meals, snacks,
+  drinks, tea/coffee, groceries, restaurant orders, anything edible.
+- DC (also "dc", "Dark Capsule Coin") is for NON-FOOD only — gadgets,
+  accessories, clothes, books, tickets, services, lending, gifts, anything
+  not edible.
+
+Say YES for exactly one of these, fully completed:
+1. A finished FOOD sale/purchase priced in CC.
+   • "sold burger to @X for 10 CC"   • "bought pizza from Riaz bhai for 40 cc"
+2. A finished NON-FOOD sale/purchase priced in DC.
+   • "sold earbuds to @X for 20 DC"  • "got the phone case from Nayeem for 8 dc"
+3. A real-money top-up into the Fruit Fund — ONLY when AUTHOR_EMAIL is
+   jakir.hossen@orbitax.com (the Fruit Minister):
+   • "Riaz paid 500 taka to fruit fund for Eid"
+   • "Amdad gave 200 tk to the fund"
+
+Say NO for anything else, including:
+• CURRENCY MISMATCH — food priced in DC, or non-food priced in CC
+  ("sold burger for 10 DC" → no; "sold earbuds for 20 CC" → no).
+• A taka → fruit-fund payment when AUTHOR_EMAIL is NOT the Fruit Minister.
+• ads or listings ("selling burgers, 10 CC each")
+• price questions ("how much for the pizza?")
+• open offers / auctions still running ("starting bid 5 CC")
+• general chat with no transaction.
+
+Honorifics (bhai, vai), @mentions and nicknames are normal names.
+Reply with exactly one lowercase word — yes or no.
+```
+
+### Step 3 — the extractor
+
+```
+You extract ONE ledger event from a DesertHouse chat message. Step 2 already
+confirmed it is recordable — output the structured JSON only, no prose.
+
+INPUT:
+- MESSAGE_TEXT: the chat message
+- AUTHOR_EMAIL: the sender's email (trusted; the author is always one party)
+
+ROSTER — the only 16 people (name/nickname → email):
+Adnan Istiaque (Adnan) → adnan.istiaque@orbitax.com
+Ashap Bappy (Bappy) → ashap.bappy@orbitax.com
+Asish Pal (Asish) → asish.pal@orbitax.com
+Enamul Hasan (Enam) → enamul.hasan@orbitax.com
+Fayjul Islam (Fayjul) → fayjul.islam@orbitax.com
+Ishtiaq Samiul (Samiul) → ishtiaq.samiul@orbitax.com
+Md. Amdadul Haque (Amdad) → amdadul.haque@orbitax.com
+Md. Jakir Hossen Shagor (Jakir) → jakir.hossen@orbitax.com
+Md. Mainul Ahsan (Swaad) → mainul.ahsan@orbitax.com
+Md. Masum Billah (Masum) → masum.billah@orbitax.com
+Md Mujahedul Azad (Turin) → mujahedul.azad@orbitax.com
+Nayeem Hossain (Nayeem) → nayeem.hossain@orbitax.com
+Prottya Roy (Prottoy) → prottya.roy@orbitax.com
+Riaz Khan (Riaz) → riaz.khan@orbitax.com
+Sabbir Hasan (Sabbir) → sabbir.hasan@orbitax.com
+Shafi Al Kader (Sopan) → shafi.kader@orbitax.com
+
+TWO EVENT KINDS:
+
+A) TRADE between two roster people (the default).
+   CURRENCY RULE (strict): FOOD → "CC"; NON-FOOD → "DC". If the coin stated in
+   the message contradicts the item type, OR no coin is stated, set isTrade=false.
+   - SELLER receives the coin; BUYER pays it. The author is always one side:
+     "sold to X" / "sold X for N" / "gave X … for N" / "X bought from me" /
+       "X owes me N"  → AUTHOR = seller, X = buyer.
+     "bought from X" / "got X from Y" / "paid X N" / "I owe X N" /
+       "X sold me"  → AUTHOR = buyer, X = seller.
+   - Resolve X to exactly ONE roster email. Not in roster, ambiguous, or more
+     than one trade in the message → isTrade=false.
+   - amountCC = the number (integer, in the trade's coin). item = short name.
+     No clear amount or item → isTrade=false.
+   - One of sellerEmail / buyerEmail MUST equal AUTHOR_EMAIL.
+   - Conditional deals: put the condition in brackets after the item, e.g.
+     "Kabab(Lifetime on Thursdays)".
+   OUTPUT (single-line minified JSON):
+   {"type":"trade","isTrade":true,"sellerEmail":"","buyerEmail":"","item":"","amountCC":0,"currency":"CC","confidence":0}
+
+B) PURCHASE — real money (taka / tk / ৳) paid into the Fruit Fund for DC.
+   VALID ONLY when AUTHOR_EMAIL is jakir.hossen@orbitax.com. For any other
+   author, set isTrade=false.
+   - The message names the BUYER (who paid) and the taka amount, e.g.
+     "Riaz paid 500 taka to fruit fund for Eid".
+   - buyerEmail = the payer, resolved to ONE roster email.
+   - amountBdt = the taka number (integer). reason = short purpose ("Eid") or "".
+   - Do NOT compute DC — the app converts taka → DC itself.
+   OUTPUT (single-line minified JSON):
+   {"type":"purchase","isTrade":true,"buyerEmail":"","amountBdt":0,"reason":"","confidence":0}
+
+If NOT recordable, output:
+{"type":"trade","isTrade":false,"sellerEmail":"","buyerEmail":"","item":"","amountCC":0,"currency":"CC","confidence":0}
+
+EXAMPLES:
+AUTHOR shafi.kader@orbitax.com | "pizza sold to swaad for 40 cc"
+→ {"type":"trade","isTrade":true,"sellerEmail":"shafi.kader@orbitax.com","buyerEmail":"mainul.ahsan@orbitax.com","item":"Pizza","amountCC":40,"currency":"CC","confidence":0.97}
+AUTHOR riaz.khan@orbitax.com | "bought earbuds from nayeem 20 dc"
+→ {"type":"trade","isTrade":true,"sellerEmail":"nayeem.hossain@orbitax.com","buyerEmail":"riaz.khan@orbitax.com","item":"Earbuds","amountCC":20,"currency":"DC","confidence":0.95}
+AUTHOR shafi.kader@orbitax.com | "sold burger to swaad for 10 dc"   (food priced in DC — mismatch)
+→ {"type":"trade","isTrade":false,"sellerEmail":"","buyerEmail":"","item":"","amountCC":0,"currency":"CC","confidence":0}
+AUTHOR jakir.hossen@orbitax.com | "Riaz paid 500 taka to fruit fund for Eid"
+→ {"type":"purchase","isTrade":true,"buyerEmail":"riaz.khan@orbitax.com","amountBdt":500,"reason":"Eid","confidence":0.96}
+AUTHOR riaz.khan@orbitax.com | "I paid 500 taka to fruit fund"   (author is not the Minister)
+→ {"type":"trade","isTrade":false,"sellerEmail":"","buyerEmail":"","item":"","amountCC":0,"currency":"CC","confidence":0}
+
+MESSAGE_TEXT:  from step 1
+AUTHOR_EMAIL:  from step 1
+```
+
+The Flow's webhook step then POSTs `{token, authorEmail, messageId, gem: <step-3 JSON>}`
+to `/api/desert-house/trade?format=text` and posts the reply back into the space.
+
+---
+
+## Quick tests (curl)
+
+```bash
+# Non-food trade → DC (buyer must hold >= 20 DC)
+curl -s -X POST "$APP_URL/api/desert-house/trade?format=text" \
+  -H "content-type: application/json" \
+  -d '{"token":"<TOKEN>","authorEmail":"riaz.khan@orbitax.com",
+       "gem":{"type":"trade","isTrade":true,"sellerEmail":"nayeem.hossain@orbitax.com",
+       "buyerEmail":"riaz.khan@orbitax.com","item":"Earbuds","amountCC":20,"currency":"DC"}}'
+
+# Taka → DC purchase (author MUST be the Fruit Minister)
+curl -s -X POST "$APP_URL/api/desert-house/trade?format=text" \
+  -H "content-type: application/json" \
+  -d '{"token":"<TOKEN>","authorEmail":"jakir.hossen@orbitax.com",
+       "gem":{"type":"purchase","isTrade":true,"buyerEmail":"riaz.khan@orbitax.com",
+       "amountBdt":500,"reason":"Eid"}}'
+# → ✅ Recorded (DC purchase): Riaz Khan +681.78 DC for ৳500 (Eid). Fruit Fund is now ৳….
+```
