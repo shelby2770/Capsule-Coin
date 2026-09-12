@@ -12,9 +12,9 @@ type Particle = {
 };
 
 /**
- * "Gold Rush" backdrop — golden particles drifting up through soft light rays
- * over the dark base. Tuned subtle so app content stays readable on top.
- * Honors prefers-reduced-motion (renders one static frame).
+ * "Gold Rush" backdrop — golden flecks falling through soft light rays over the
+ * dark base, with a gentle sideways sway. Tuned subtle so app content stays
+ * readable on top. Honors prefers-reduced-motion (renders one static frame).
  */
 export function BackgroundFX() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -36,13 +36,13 @@ export function BackgroundFX() {
     let parts: Particle[] = [];
 
     const seed = () => {
-      const count = Math.min(70, Math.max(24, Math.floor(W / 26)));
+      const count = Math.min(90, Math.max(30, Math.floor(W / 22)));
       parts = Array.from({ length: count }, () => ({
         x: Math.random() * W,
         y: Math.random() * H,
-        r: Math.random() * 2 + 0.5,
-        sp: Math.random() * 0.4 + 0.1,
-        a: Math.random() * 0.38 + 0.12,
+        r: Math.random() * 2 + 0.6,
+        sp: Math.random() * 0.8 + 0.35, // px/frame downward — visible drift
+        a: Math.random() * 0.4 + 0.14,
         tw: Math.random() * Math.PI * 2,
       }));
     };
@@ -61,10 +61,11 @@ export function BackgroundFX() {
       ctx.shadowColor = "rgba(245,197,66,0.7)";
       ctx.shadowBlur = 7;
       for (const p of parts) {
-        p.y -= p.sp;
+        p.y += p.sp; // fall downward
         p.tw += 0.02;
-        if (p.y < -4) {
-          p.y = H + 4;
+        p.x += Math.sin(p.tw) * 0.25; // gentle sideways sway
+        if (p.y > H + 4) {
+          p.y = -4;
           p.x = Math.random() * W;
         }
         const flick = 0.6 + 0.4 * Math.sin(p.tw);

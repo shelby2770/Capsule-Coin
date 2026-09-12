@@ -27,16 +27,16 @@ export const config = {
     rewardCap: num(process.env.MINING_REWARD_CAP, 10),
     // Free-tier reward taper: keyspace N stays fixed, but the per-match reward
     // range (matchMin..matchMax) scales DOWN as the fixed reserve is mined out —
-    // one step per this many NET CC mined. With supplyCap 1000 and step 100 that's
+    // one step per this many NET DC mined. With supplyCap 5000 and step 500 that's
     // 10 brackets, so free reward scales 100% → 10% across the reserve. Paid mines
     // are not tapered. Set step to 0/negative to disable the taper (always full).
-    rewardTaperStepCC: num(process.env.MINING_REWARD_TAPER_STEP, 100),
+    rewardTaperStepCC: num(process.env.MINING_REWARD_TAPER_STEP, 500),
     freePerDay: num(process.env.MINING_FREE_PER_DAY, 3),
-    // Fixed supply: at most this many NET CC can ever be mined into circulation
-    // (total mined − total burned). Burned pay-to-mine fees recycle headroom, so
-    // an active economy keeps mining alive — but total inflation can never exceed
-    // this cap. This is what guarantees "no runaway inflation".
-    supplyCap: num(process.env.MINING_SUPPLY_CAP, 1000),
+    // Fixed DC reserve: at most this many NET DC can ever be mined into
+    // circulation (total mined − converted back). Converting DC→CC reopens
+    // headroom, so an active economy keeps mining alive — but total inflation can
+    // never exceed this cap. This is what guarantees "no runaway inflation".
+    supplyCap: num(process.env.MINING_SUPPLY_CAP, 5000),
     // Pay-to-mine ladder (bought in order, refills daily). Fees are burned. Each
     // tier's keyspace shrinks → progressively richer than free and the tier below.
     ladder: [
@@ -83,8 +83,19 @@ export const config = {
     // Buy DC with real money (admin-recorded). 0 = rate not set yet. Proceeds are
     // tallied into the Capsule Fruit Fund, maintained by the Fruit Minister (Jakir).
     bdtPerDc: num(process.env.DC_BDT_PER_DC, 0),
+    // Volume bonus on buying DC with taka: the more you invest, the more DC per
+    // taka you get (a bounded bulk reward). DC(bdt) = (bdt / marketPricePerDc) ·
+    // (1 + buyBonusMax·(1 − e^(−bdt/buyBonusScale))). Max at buyBonusMax over the
+    // base rate; buyBonusScale is the taka scale over which the bonus ramps in.
+    buyBonusMax: num(process.env.DC_BUY_BONUS_MAX, 0.5),
+    buyBonusScale: num(process.env.DC_BUY_BONUS_SCALE, 500),
     fruitMinisterEmail:
       process.env.FRUIT_MINISTER_EMAIL || "jakir.hossen@orbitax.com",
+  },
+  // Marketplace offers auto-expire (and are deleted) once they're older than this
+  // with no taker — checked lazily whenever offers are listed. Default 2 days.
+  offers: {
+    ttlMs: num(process.env.OFFER_TTL_MS, 2 * 24 * 60 * 60 * 1000),
   },
   // Credit-floor grace / ban. balanceFloor (above) is the SOFT trigger: cross below
   // it and a graceDays countdown starts; recover to >= it in time or be permanently

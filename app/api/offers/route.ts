@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireMember } from "@/lib/auth/verify";
-import { listOffers, createOffer } from "@/lib/excel/store";
+import { listOffers, createOffer, expireStaleOffers } from "@/lib/excel/store";
 import { ledgerErrorResponse, gateResponse } from "@/lib/http";
 import { rateLimit } from "@/lib/rateLimit";
 import { config } from "@/lib/config";
@@ -12,6 +12,8 @@ export const dynamic = "force-dynamic";
 export async function GET(req: Request) {
   const gate = await requireMember(req);
   if (!gate.ok) return gateResponse(gate.status);
+  // Drop offers that have sat OPEN past the TTL before returning the board.
+  await expireStaleOffers().catch(() => {});
   const offers = await listOffers();
   offers.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   return NextResponse.json({ offers });

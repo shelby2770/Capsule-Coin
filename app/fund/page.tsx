@@ -23,9 +23,9 @@ type Fund = {
 };
 type Pricing = {
   bdtPerCC: number;
-  bdtPerDc: number;
+  baseBdtPerDc: number;
   supply: number;
-  tiers: Array<{ bdt: number; dc: number }>;
+  tiers: Array<{ bdt: number; dc: number; bonusPct: number }>;
 };
 type Row = { name: string; email: string };
 
@@ -185,34 +185,42 @@ function Fund() {
           </h2>
         </div>
         <p className="mt-1 text-xs text-mute">
-          At today&apos;s market price —{" "}
+          Buy more, get more —{" "}
           <span className="font-semibold text-flame">
-            1 DC ≈ ৳{pricing ? formatBdt(pricing.bdtPerDc) : "—"}
+            the more taka you invest, the better your DC rate
           </span>
-          . Priced off the live Convert rate, so buying then converting back
-          reconciles — no free CC. Moves with the market.
+          {pricing ? <> (small buys ≈ ৳{formatBdt(pricing.baseBdtPerDc)}/DC)</> : null}. Tracks the live CC
+          price and DC scarcity, so it moves with the market.
         </p>
 
         <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-          {(pricing?.tiers ?? [{ bdt: 100, dc: 0 }, { bdt: 200, dc: 0 }, { bdt: 500, dc: 0 }, { bdt: 1000, dc: 0 }]).map(
-            (t) => (
-              <div
-                key={t.bdt}
-                className="rounded-2xl border border-ember-500/20 bg-ember-500/[0.06] p-4 text-center"
-              >
-                <div className="font-display text-lg font-semibold text-white">
-                  ৳{toBanglaDigits(t.bdt.toLocaleString())}
-                </div>
-                <div className="mt-0.5 text-[11px] uppercase tracking-wide text-mute">
-                  buys
-                </div>
-                <div className="mt-1 font-display text-xl font-bold text-gradient-flame">
-                  {pricing ? formatDC(t.dc) : "—"}
-                </div>
-                <div className="text-[11px] font-semibold text-flame/80">DC</div>
+          {(pricing?.tiers ?? [
+            { bdt: 100, dc: 0, bonusPct: 0 },
+            { bdt: 200, dc: 0, bonusPct: 0 },
+            { bdt: 500, dc: 0, bonusPct: 0 },
+            { bdt: 1000, dc: 0, bonusPct: 0 },
+          ]).map((t) => (
+            <div
+              key={t.bdt}
+              className="relative rounded-2xl border border-ember-500/20 bg-ember-500/[0.06] p-4 text-center"
+            >
+              {t.bonusPct > 0 && (
+                <span className="absolute right-2 top-2 rounded-full border border-ember-500/40 bg-ember-500/10 px-1.5 py-0.5 text-[10px] font-bold text-flame">
+                  +{t.bonusPct}%
+                </span>
+              )}
+              <div className="font-display text-lg font-semibold text-white">
+                ৳{toBanglaDigits(t.bdt.toLocaleString())}
               </div>
-            ),
-          )}
+              <div className="mt-0.5 text-[11px] uppercase tracking-wide text-mute">
+                buys
+              </div>
+              <div className="mt-1 font-display text-xl font-bold text-gradient-flame">
+                {pricing ? formatDC(t.dc) : "—"}
+              </div>
+              <div className="text-[11px] font-semibold text-flame/80">DC</div>
+            </div>
+          ))}
         </div>
 
         <p className="mt-3 text-[11px] text-mute">

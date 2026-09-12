@@ -1160,6 +1160,51 @@ export async function expireStaleTransfers(now = Date.now()): Promise<number> {
   });
 }
 
+/**
+ * Expire and DELETE marketplace offers left OPEN past config.offers.ttlMs with no
+ * taker. Offers aren't hash-chained (only transactions are), so dropping them from
+ * state is safe. A stale BUY offer still holds escrow, so it's refunded (an
+ * ESCROW_REFUND tx) before the offer is removed. Serverless has no cron, so this
+ * runs lazily whenever offers are listed. Returns the number removed.
+ */
+export async function expireStaleOffers(now = Date.now()): Promise<number> {
+  const cutoff = now - config.offers.ttlMs;
+  const isStale = (o: Offer) =>
+    o.status === "OPEN" && Date.parse(o.createdAt) < cutoff;
+  const state = await ensureLoaded();
+  if (!state.offers.some(isStale)) return 0;
+  const days = Math.max(1, Math.round(config.offers.ttlMs / DAY_MS));
+  return mutate((draft) => {
+    let removed = 0;
+    const keep: Offer[] = [];
+    for (const offer of draft.offers) {
+      if (!isStale(offer)) {
+        keep.push(offer);
+        continue;
+      }
+      removed++;
+      // Refund a stale BUY offer's escrow before it's dropped.
+      if (offer.type === "BUY" && offer.escrowAmount > 0) {
+        const creator = draft.members.find((m) => m.email === offer.creatorEmail);
+        if (creator) {
+          creator.balance = round2(creator.balance + offer.escrowAmount);
+          refreshGrace(creator, now); // refund may lift them out of grace
+        }
+        appendTransaction(draft, {
+          type: "ESCROW_REFUND",
+          fromEmail: null,
+          toEmail: offer.creatorEmail,
+          amountCC: offer.escrowAmount,
+          offerId: offer.id,
+          memo: `Escrow refunded — buy request expired (>${days}d unsold): ${offer.itemName}`,
+        });
+      }
+    }
+    draft.offers = keep;
+    return removed;
+  });
+}
+
 /** Move CC from payer to payee and append the TRANSFER transaction. */
 function settleTransfer(draft: LedgerState, t: TransferRequest): Transaction {
   const now = Date.now();
@@ -1976,45 +2021,50 @@ export async function fruitFundStatus(): Promise<FruitFundStatus> {
 
 export type DcBuyPricing = {
   bdtPerCC: number; // live CC market price (৳)
-  bdtPerDc: number; // effective ৳ to buy 1 DC at the tier scale (headline)
+  baseBdtPerDc: number; // ৳ for 1 DC at low volume (before the bulk bonus)
   supply: number; // total DC in circulation
-  tiers: Array<{ bdt: number; dc: number }>; // how much DC common taka amounts buy
+  // how much DC common taka amounts buy; bonusPct = the extra DC/taka vs the
+  // smallest tier (so it reads 0 on ৳100 and climbs from there)
+  tiers: Array<{ bdt: number; dc: number; bonusPct: number }>;
 };
 
 /**
- * Reference pricing for buying DC with real money, derived from the LIVE market.
- * Each taka tier is priced by INVERTING the same DC->CC convert curve the Convert
- * page uses (`quoteDcToCc`): the DC you get for ৳X is exactly the DC that converts
- * back to ৳X, so buying and converting reconcile — no mismatch, no free CC. Because
- * `quoteDcToCc` carries a bulk bonus (bigger amounts earn a better per-DC rate), we
- * solve it numerically (it's monotonic in DC → bisection). The Fruit Minister still
- * records the actual figures; this only powers the on-screen guide.
+ * Reference pricing for buying DC with real money — the LIVE market rate plus a
+ * VOLUME BONUS (the more taka you invest, the more DC per taka you get).
+ *
+ *   baseBdtPerDc = bulkMax · m(S) · bdtPerCC          (1 DC's ৳ value, low volume)
+ *   DC(bdt)      = (bdt / baseBdtPerDc) · volMult(bdt)
+ *   volMult(bdt) = 1 + buyBonusMax · (1 − e^(−bdt / buyBonusScale))
+ *
+ * volMult rises from 1 toward 1+buyBonusMax as bdt grows, so ৳200 buys strictly
+ * MORE than 2×৳100, ৳500 more than 5×, etc. — bounded, never runaway. Everything
+ * tracks the live CC price and DC scarcity. The Fruit Minister still records the
+ * actual figures; this only powers the on-screen guide.
  */
 export async function dcBuyPricing(): Promise<DcBuyPricing> {
   const s = await ensureLoaded();
   const v = valueReport(s, Date.now());
   const supply = totalDcSupply(s);
+  const c = config.dc;
+  const S = Math.max(1, supply); // near-empty market reads "scarce"
+  const m = Math.min(c.clampMax, Math.max(c.clampMin, Math.pow(c.refSupply / S, c.supplyGamma)));
   const bdtPerCC = v.bdtPerCC;
+  const baseBdtPerDc = round2(c.bulkMax * m * bdtPerCC);
+  const baseRate = baseBdtPerDc > 0 ? 1 / baseBdtPerDc : 0; // DC per taka, pre-bonus
+  const volMult = (bdt: number) =>
+    1 + c.buyBonusMax * (1 - Math.exp(-bdt / Math.max(1, c.buyBonusScale)));
 
-  // DC that converts back to exactly `bdt` taka at the live rate.
-  const dcForBdt = (bdt: number): number => {
-    if (bdtPerCC <= 0) return 0;
-    const targetCc = bdt / bdtPerCC;
-    let lo = 0;
-    let hi = 1;
-    while (quoteDcToCc(hi, supply).cc < targetCc && hi < 1e9) hi *= 2;
-    for (let i = 0; i < 60; i++) {
-      const mid = (lo + hi) / 2;
-      if (quoteDcToCc(mid, supply).cc < targetCc) lo = mid;
-      else hi = mid;
-    }
-    return round2((lo + hi) / 2);
-  };
-
-  const tiers = [100, 200, 500, 1000].map((bdt) => ({ bdt, dc: dcForBdt(bdt) }));
-  // Headline "1 DC ≈ ৳X" taken from the ৳100 tier so it always matches the tiles.
-  const bdtPerDc = tiers[0].dc > 0 ? round2(tiers[0].bdt / tiers[0].dc) : 0;
-  return { bdtPerCC, bdtPerDc, supply: round2(supply), tiers };
+  const raw = [100, 200, 500, 1000].map((bdt) => ({
+    bdt,
+    dc: round2(bdt * baseRate * volMult(bdt)),
+  }));
+  // Bonus vs the smallest tier's DC/taka, so the "bigger = better" step is visible.
+  const rate0 = raw[0].dc > 0 ? raw[0].dc / raw[0].bdt : 0;
+  const tiers = raw.map((t) => ({
+    ...t,
+    bonusPct: rate0 > 0 ? Math.round((t.dc / t.bdt / rate0 - 1) * 100) : 0,
+  }));
+  return { bdtPerCC, baseBdtPerDc, supply: round2(supply), tiers };
 }
 
 /** True for the one member allowed to record real-money DC purchases. */
