@@ -11,6 +11,7 @@ import { NotificationsBell } from "@/components/NotificationsBell";
 import { ValueTicker } from "@/components/ValueTicker";
 import { StoryMode } from "@/components/StoryMode";
 import { StandingBanner } from "@/components/StandingBanner";
+import { DarkCoinLogo } from "@/components/DarkCoinLogo";
 import { formatDC } from "@/lib/format";
 import {
   LogOut,
@@ -23,7 +24,6 @@ import {
   Lock,
   Repeat,
   Sprout,
-  Flame,
 } from "lucide-react";
 
 const NAV: Array<{
@@ -173,7 +173,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             className="chip border-ember-500/30 text-ember-300 hover:text-ember-200"
             title="Your Dark Capsule Coin — tap to convert"
           >
-            <Flame size={13} /> {formatDC(member?.dcBalance ?? 0)}
+            <DarkCoinLogo size={16} /> {formatDC(member?.dcBalance ?? 0)}
             <span className="hidden sm:inline">DC</span>
           </Link>
         </div>

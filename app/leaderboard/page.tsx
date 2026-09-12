@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { AppShell } from "@/components/AppShell";
+import { DarkCoinLogo } from "@/components/DarkCoinLogo";
 import { useLeaderboard } from "@/lib/useLeaderboard";
 import { formatCC, formatDC, balanceStanding } from "@/lib/format";
 import type { LeaderboardRow } from "@/lib/types";
@@ -130,7 +131,7 @@ function Leaderboard() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="flex items-center gap-2 font-display text-2xl font-bold text-white">
           {isDc ? (
-            <Flame size={22} className="text-ember-400" />
+            <DarkCoinLogo size={22} />
           ) : (
             <Trophy size={22} className="text-gold-400" />
           )}
@@ -171,7 +172,7 @@ function Leaderboard() {
         <div className={`${isDc ? "dc-card" : "capsule-card"} p-4`}>
           <div className="flex items-center gap-2 text-xs text-mute">
             {isDc ? (
-              <Flame size={14} className="text-ember-400" />
+              <DarkCoinLogo size={16} />
             ) : (
               <Layers size={14} className="text-gold-400" />
             )}{" "}

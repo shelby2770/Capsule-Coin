@@ -9,6 +9,7 @@ import { useTransactions } from "@/lib/useTransactions";
 import { useValue } from "@/lib/useValue";
 import { CountUp } from "@/components/CountUp";
 import { formatCC, formatDC, formatBdt, BALANCE_WARN } from "@/lib/format";
+import { DarkCoinLogo } from "@/components/DarkCoinLogo";
 import { CoinLogo } from "@/components/CoinLogo";
 import { Sparkline } from "@/components/Sparkline";
 import type { TransactionPublic, ValueResponse } from "@/lib/types";
@@ -184,7 +185,7 @@ function WalletHome() {
             <span className="text-xl font-semibold text-gold-400">CC</span>
           </div>
           <div className="mt-2 flex items-center gap-2">
-            <Flame size={15} className="text-ember-400" />
+            <DarkCoinLogo size={18} />
             <CountUp
               value={dcBalance}
               format={formatDC}

@@ -267,7 +267,7 @@ function Mine() {
                 {result.capped ? (
                   <Sparkles size={30} className="animate-cap-slam text-ember-300" />
                 ) : (
-                  <Flame size={30} className="text-ember-400" />
+                  <DarkCoinLogo size={32} />
                 )}
                 <div className="mt-2 flex items-baseline gap-1">
                   <span className="font-display text-3xl font-black tabular-nums text-ember-300">
