@@ -51,12 +51,15 @@ function buildLeaderboard(members: Member[], you: string): LeaderboardResponse {
       name: a.name,
       email,
       balance: m?.balance ?? 0,
+      dcBalance: m?.dcBalance ?? 0,
+      banned: Boolean(m?.banned),
       role: m?.role ?? a.role,
       joined: Boolean(m?.verified),
     };
   });
   const joinedCount = merged.filter((x) => x.joined).length;
   const totalSupply = merged.reduce((s, x) => s + Math.max(0, x.balance), 0);
+  const totalDc = merged.reduce((s, x) => s + Math.max(0, x.dcBalance), 0);
   merged.sort((a, b) => b.balance - a.balance || a.name.localeCompare(b.name));
 
   const rows: LeaderboardRow[] = [];
@@ -71,6 +74,8 @@ function buildLeaderboard(members: Member[], you: string): LeaderboardResponse {
       name: x.name,
       email: x.email,
       balance: x.balance,
+      dcBalance: x.dcBalance,
+      banned: x.banned,
       role: x.role,
       joined: x.joined,
       isYou: x.email === you,
@@ -80,7 +85,7 @@ function buildLeaderboard(members: Member[], you: string): LeaderboardResponse {
           : 0,
     });
   });
-  return { totalSupply, memberCount: ALLOWLIST.length, joinedCount, rows };
+  return { totalSupply, totalDc, memberCount: ALLOWLIST.length, joinedCount, rows };
 }
 
 // ── mirrors app/api/transfers/route.ts ──────────────────────────────────────

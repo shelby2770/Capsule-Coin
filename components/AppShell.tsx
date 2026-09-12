@@ -153,9 +153,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="mx-auto min-h-screen max-w-5xl px-5 py-6">
-      <header className="flex items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <Link href="/dashboard" className="flex items-center gap-3">
+      <header className="flex items-center justify-between gap-3">
+        {/* brand + the "money" zone: CC live value and your DC balance, grouped */}
+        <div className="flex min-w-0 items-center gap-2 sm:gap-2.5">
+          <Link href="/dashboard" className="flex shrink-0 items-center gap-2.5">
             <CoinLogo size={36} />
             <span className="font-display text-lg font-semibold tracking-tight">
               Capsule<span className="text-gold-400">Coin</span>
@@ -167,9 +168,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <Link href="/value" className="md:hidden" aria-label="CC value history">
             <ValueTicker compact />
           </Link>
-        </div>
-
-        <div className="flex items-center gap-3">
           <Link
             href="/convert"
             className="chip border-ember-500/30 text-ember-300 hover:text-ember-200"
@@ -178,18 +176,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <Flame size={13} /> {formatDC(member?.dcBalance ?? 0)}
             <span className="hidden sm:inline">DC</span>
           </Link>
-          {member?.role && (
-            <span className="chip hidden border-teal-500/30 text-teal-300 sm:inline-flex">
-              {member.role}
-            </span>
-          )}
+        </div>
+
+        {/* identity + actions */}
+        <div className="flex shrink-0 items-center gap-2.5">
           <Link
             href={meSlug ? `/member/${meSlug}` : "/dashboard"}
-            className="group hidden text-right sm:block"
+            className="group hidden text-right md:block"
             aria-label="View your profile"
             title="View your profile"
           >
-            <div className="text-sm font-medium text-white transition-colors group-hover:text-gold-300">
+            <div className="text-sm font-medium leading-tight text-white transition-colors group-hover:text-gold-300">
               {member?.name}
             </div>
             <div className="text-xs text-mute">{member?.email}</div>

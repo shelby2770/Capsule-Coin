@@ -27,6 +27,8 @@ export type LeaderboardRow = {
   name: string;
   email: string;
   balance: number;
+  dcBalance: number; // Dark Capsule Coin holdings (for the DC leaderboard)
+  banned: boolean; // account frozen (grace deadline missed)
   role: string;
   joined: boolean;
   isYou: boolean;
@@ -35,6 +37,7 @@ export type LeaderboardRow = {
 
 export type LeaderboardResponse = {
   totalSupply: number;
+  totalDc: number; // sum of all DC holdings (DC leaderboard "supply")
   memberCount: number; // total allowlisted
   joinedCount: number; // wallets created so far
   rows: LeaderboardRow[];

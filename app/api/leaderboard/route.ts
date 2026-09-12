@@ -32,6 +32,8 @@ export async function GET(req: Request) {
       name: a.name,
       email,
       balance: m?.balance ?? 0,
+      dcBalance: m?.dcBalance ?? 0,
+      banned: Boolean(m?.banned),
       role: m?.role ?? a.role,
       // "Joined" = has verified their email and actually entered the app,
       // not merely having a seeded balance row.
@@ -44,6 +46,7 @@ export async function GET(req: Request) {
   // balances are credit lines (borrowed against the −500 floor), not circulating
   // coin, so they don't cancel out the supply or earn a share.
   const totalSupply = merged.reduce((s, x) => s + Math.max(0, x.balance), 0);
+  const totalDc = merged.reduce((s, x) => s + Math.max(0, x.dcBalance), 0);
   merged.sort((a, b) => b.balance - a.balance || a.name.localeCompare(b.name));
 
   const rows: LeaderboardRow[] = [];
@@ -58,6 +61,8 @@ export async function GET(req: Request) {
       name: x.name,
       email: x.email,
       balance: x.balance,
+      dcBalance: x.dcBalance,
+      banned: x.banned,
       role: x.role,
       joined: x.joined,
       isYou: x.email === you,
@@ -70,6 +75,7 @@ export async function GET(req: Request) {
 
   return NextResponse.json({
     totalSupply,
+    totalDc,
     memberCount: ALLOWLIST.length,
     joinedCount,
     rows,

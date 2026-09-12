@@ -10,6 +10,25 @@
  */
 export const BALANCE_WARN = -400;
 
+/**
+ * The soft credit floor (mirrors server `config.balanceFloor`). A balance BELOW
+ * this has breached the floor — the member is in the 3-day grace (or already
+ * frozen), which reads as "bankrupt", not merely "near bankrupt". Kept
+ * client-side so the leaderboard/profile can label standing without a round-trip.
+ */
+export const BALANCE_FLOOR = -500;
+
+/** How a CC balance reads for display badges. `banned` (when known) wins. */
+export function balanceStanding(
+  balance: number,
+  banned = false,
+): "ok" | "warn" | "bankrupt" | "frozen" {
+  if (banned) return "frozen";
+  if (balance < BALANCE_FLOOR) return "bankrupt"; // breached −500 → in grace
+  if (balance <= BALANCE_WARN) return "warn"; // approaching the floor
+  return "ok";
+}
+
 /** Round to 2 decimal places, avoiding binary float drift (e.g. 4.005 -> 4.01). */
 export function round2(n: number): number {
   return Math.round((n + Number.EPSILON) * 100) / 100;

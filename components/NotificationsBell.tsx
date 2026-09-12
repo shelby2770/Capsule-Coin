@@ -9,11 +9,12 @@ import {
   Pickaxe,
   Flame,
   AlertTriangle,
+  Ban,
   Inbox,
 } from "lucide-react";
 import { useAuth } from "@/components/AuthProvider";
 import { useTransactions } from "@/lib/useTransactions";
-import { formatCC, formatDC, BALANCE_WARN } from "@/lib/format";
+import { formatCC, formatDC, balanceStanding } from "@/lib/format";
 import type { TransactionPublic, TransfersResponse } from "@/lib/types";
 
 /** Emails are firstname.lastname@… — derive a display name without an extra fetch. */
@@ -74,8 +75,9 @@ export function NotificationsBell({
 
   const me = member?.email ?? "";
   const pending = transfers?.incoming ?? [];
-  const nearBankrupt = (member?.balance ?? 0) <= BALANCE_WARN;
-  const actionCount = pending.length + (nearBankrupt ? 1 : 0);
+  const standing = balanceStanding(member?.balance ?? 0, member?.banned ?? false);
+  const creditAlert = standing !== "ok";
+  const actionCount = pending.length + (creditAlert ? 1 : 0);
 
   const recent = [...txs]
     .filter((t) => FEED_TYPES.has(t.type))
@@ -124,13 +126,31 @@ export function NotificationsBell({
           </div>
 
           <div className="max-h-[70vh] overflow-y-auto">
-            {(pending.length > 0 || nearBankrupt) && (
+            {(pending.length > 0 || creditAlert) && (
               <div className="border-b border-white/5 px-4 py-3">
                 <div className="text-[11px] font-medium uppercase tracking-wide text-mute">
                   Needs your action
                 </div>
                 <div className="mt-2 space-y-2">
-                  {nearBankrupt && (
+                  {standing === "frozen" && (
+                    <div className="flex items-start gap-2.5 rounded-xl border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-200">
+                      <Ban size={16} className="mt-0.5 shrink-0" />
+                      <span>
+                        Account frozen — you dropped below −500 CC and the recovery
+                        window passed. Ask an admin to restore access.
+                      </span>
+                    </div>
+                  )}
+                  {standing === "bankrupt" && (
+                    <div className="flex items-start gap-2.5 rounded-xl border border-ember-500/40 bg-ember-500/10 p-3 text-sm text-ember-300">
+                      <AlertTriangle size={16} className="mt-0.5 shrink-0" />
+                      <span>
+                        Below the −500 CC floor ({formatCC(member?.balance ?? 0)} CC) —
+                        sell or convert DC → CC before the grace deadline.
+                      </span>
+                    </div>
+                  )}
+                  {standing === "warn" && (
                     <div className="flex items-start gap-2.5 rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200">
                       <AlertTriangle size={16} className="mt-0.5 shrink-0" />
                       <span>

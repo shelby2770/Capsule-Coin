@@ -7,7 +7,7 @@ import { AppShell } from "@/components/AppShell";
 import { BalanceHistoryCard } from "@/components/BalanceHistoryCard";
 import { useAuth } from "@/components/AuthProvider";
 import { useValue } from "@/lib/useValue";
-import { formatCC, formatBdt, BALANCE_WARN } from "@/lib/format";
+import { formatCC, formatBdt, balanceStanding } from "@/lib/format";
 import { LEDGER_EVENT } from "@/lib/ledgerEvents";
 import {
   ArrowLeft,
@@ -157,7 +157,7 @@ function MemberProfile() {
   }
 
   const negative = p.balance < 0;
-  const nearBankrupt = p.balance <= BALANCE_WARN;
+  const standing = balanceStanding(p.balance); // `banned` isn't exposed on the public profile
   const bdt = value ? Math.abs(p.balance) * value.bdtPerCC : null;
 
   return (
@@ -176,8 +176,13 @@ function MemberProfile() {
                 <span className="chip border-gold-500/40 py-0.5 text-[11px] text-gold-300">you</span>
               )}
               {!p.joined && <span className="text-[11px] text-mute/70">not joined yet</span>}
-              {nearBankrupt && (
-                <span className="chip border-red-500/40 py-0.5 text-[11px] text-red-300">
+              {standing === "bankrupt" && (
+                <span className="chip border-red-500/40 py-0.5 text-[11px] font-medium text-red-300">
+                  <AlertTriangle size={11} /> bankrupt
+                </span>
+              )}
+              {standing === "warn" && (
+                <span className="chip border-amber-500/40 py-0.5 text-[11px] text-amber-300">
                   <AlertTriangle size={11} /> near bankrupt
                 </span>
               )}
