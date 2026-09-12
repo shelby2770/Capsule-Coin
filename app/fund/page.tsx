@@ -5,23 +5,41 @@ import { AppShell } from "@/components/AppShell";
 import { useAuth } from "@/components/AuthProvider";
 import { DarkCoinLogo } from "@/components/DarkCoinLogo";
 import { formatBdt, formatDC, toBanglaDigits } from "@/lib/format";
-import { Apple, Crown, Loader2, Plus, Sparkles, Sprout } from "lucide-react";
+import { Apple, Banknote, Crown, Loader2, Plus, Sparkles, Sprout } from "lucide-react";
 
+type Purchase = {
+  name: string;
+  dc: number;
+  bdt: number;
+  note: string;
+  createdAt: string;
+};
 type Fund = {
   totalBdt: number;
   contributions: number;
   ministerEmail: string;
   ministerName: string;
+  recent: Purchase[];
 };
 type Pricing = {
   bdtPerCC: number;
-  perDcCc: number;
   bdtPerDc: number;
-  multiplier: number;
   supply: number;
   tiers: Array<{ bdt: number; dc: number }>;
 };
 type Row = { name: string; email: string };
+
+function timeAgo(iso: string) {
+  const s = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+  if (s < 45) return "just now";
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24);
+  if (d < 7) return `${d}d ago`;
+  return new Date(iso).toLocaleDateString();
+}
 
 export default function FundPage() {
   return (
@@ -168,13 +186,11 @@ function Fund() {
         </div>
         <p className="mt-1 text-xs text-mute">
           At today&apos;s market price —{" "}
-          <span className="font-semibold text-ember-300">
+          <span className="font-semibold text-flame">
             1 DC ≈ ৳{pricing ? formatBdt(pricing.bdtPerDc) : "—"}
-          </span>{" "}
-          {pricing && (
-            <>({pricing.perDcCc} CC each · scarcity ×{pricing.multiplier})</>
-          )}
-          . Tracks the live CC rate and DC scarcity, so it moves with the market.
+          </span>
+          . Priced off the live Convert rate, so buying then converting back
+          reconciles — no free CC. Moves with the market.
         </p>
 
         <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -190,10 +206,10 @@ function Fund() {
                 <div className="mt-0.5 text-[11px] uppercase tracking-wide text-mute">
                   buys
                 </div>
-                <div className="mt-1 font-display text-xl font-bold text-gradient-ember">
+                <div className="mt-1 font-display text-xl font-bold text-gradient-flame">
                   {pricing ? formatDC(t.dc) : "—"}
                 </div>
-                <div className="text-[11px] font-semibold text-ember-300/80">DC</div>
+                <div className="text-[11px] font-semibold text-flame/80">DC</div>
               </div>
             ),
           )}
@@ -203,6 +219,46 @@ function Fund() {
           A guide only — {ministerName} records the actual DC and taka for each
           purchase.
         </p>
+      </div>
+
+      {/* Recent real-money DC purchases */}
+      <div className="capsule-card overflow-hidden">
+        <div className="flex items-center justify-between border-b border-white/5 px-5 py-3">
+          <h2 className="flex items-center gap-2 text-sm font-semibold text-white">
+            <Banknote size={16} className="text-teal-400" /> Recent purchases
+          </h2>
+          <span className="text-xs text-mute">{fund?.contributions ?? 0} total</span>
+        </div>
+        {(fund?.recent?.length ?? 0) === 0 ? (
+          <p className="px-5 py-8 text-center text-sm text-mute">
+            No DC has been bought with real money yet.
+          </p>
+        ) : (
+          <ul className="divide-y divide-white/5">
+            {fund!.recent.map((p, i) => (
+              <li key={i} className="flex items-center gap-3 px-5 py-3">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-2xl bg-ember-500/10">
+                  <DarkCoinLogo size={16} />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-sm text-white">
+                    {p.name}
+                    {p.note && <span className="text-mute"> · {p.note}</span>}
+                  </div>
+                  <div className="text-[11px] text-mute">{timeAgo(p.createdAt)}</div>
+                </div>
+                <div className="text-right">
+                  <div className="text-sm font-semibold text-flame">
+                    +{formatDC(p.dc)} <span className="text-xs text-mute">DC</span>
+                  </div>
+                  <div className="text-[11px] text-teal-300/80">
+                    ৳{formatBdt(p.bdt)}
+                  </div>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
 
       {isMinister && (

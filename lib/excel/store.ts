@@ -1929,63 +1929,92 @@ export async function convertDcToCc(
 }
 
 // ── Dark Capsule Coin: buy with real money (Fruit Fund) ─────────────────────
+export type FruitFundPurchase = {
+  name: string; // buyer
+  dc: number; // DC credited
+  bdt: number; // taka paid
+  note: string;
+  createdAt: string;
+};
+
 export type FruitFundStatus = {
   totalBdt: number;
   contributions: number;
   ministerEmail: string;
   ministerName: string;
+  recent: FruitFundPurchase[]; // most-recent real-money DC purchases first
 };
 
 export async function fruitFundStatus(): Promise<FruitFundStatus> {
   const s = await ensureLoaded();
   const ministerEmail = config.dc.fruitMinisterEmail;
+  const purchases = s.transactions.filter((t) => t.type === "PURCHASE");
+  // bdtPaid isn't a structured field — parse it back out of the memo we author
+  // ("Bought <dc> DC for ৳<bdt> → Fruit Fund — <note>").
+  const recent: FruitFundPurchase[] = [...purchases]
+    .sort((a, b) => b.seq - a.seq)
+    .slice(0, 8)
+    .map((t) => {
+      const bdtMatch = t.memo.match(/৳\s*([\d.]+)/);
+      const noteMatch = t.memo.match(/—\s*(.+)$/);
+      return {
+        name: t.toEmail ? allowlistEntry(t.toEmail)?.name || t.toEmail : "—",
+        dc: round2(t.amountCC),
+        bdt: bdtMatch ? round2(Number(bdtMatch[1])) : 0,
+        note: noteMatch ? noteMatch[1].trim() : "",
+        createdAt: t.createdAt,
+      };
+    });
   return {
     totalBdt: round2(s.fruitFundBdt ?? 0),
-    contributions: s.transactions.filter((t) => t.type === "PURCHASE").length,
+    contributions: purchases.length,
     ministerEmail,
     ministerName: allowlistEntry(ministerEmail)?.name || ministerEmail,
+    recent,
   };
 }
 
 export type DcBuyPricing = {
   bdtPerCC: number; // live CC market price (৳)
-  perDcCc: number; // CC value of 1 DC at current scarcity (its best convert-back rate)
-  bdtPerDc: number; // taka to buy 1 DC at today's market price
-  multiplier: number; // scarcity multiplier m(S)
+  bdtPerDc: number; // effective ৳ to buy 1 DC at the tier scale (headline)
   supply: number; // total DC in circulation
   tiers: Array<{ bdt: number; dc: number }>; // how much DC common taka amounts buy
 };
 
 /**
- * Reference pricing for buying DC with real money, derived from the LIVE market:
- * 1 DC is worth its best convert-back rate (bulkMax · scarcity m(S)) in CC, and
- * 1 CC is worth today's ৳ rate — so ৳/DC = bulkMax · m(S) · bdtPerCC. Pricing DC
- * at its top convert rate keeps buying arbitrage-free (you can't buy DC then
- * convert it straight back for a profit). The Fruit Minister still records the
- * actual figures; this only powers the on-screen guide.
+ * Reference pricing for buying DC with real money, derived from the LIVE market.
+ * Each taka tier is priced by INVERTING the same DC->CC convert curve the Convert
+ * page uses (`quoteDcToCc`): the DC you get for ৳X is exactly the DC that converts
+ * back to ৳X, so buying and converting reconcile — no mismatch, no free CC. Because
+ * `quoteDcToCc` carries a bulk bonus (bigger amounts earn a better per-DC rate), we
+ * solve it numerically (it's monotonic in DC → bisection). The Fruit Minister still
+ * records the actual figures; this only powers the on-screen guide.
  */
 export async function dcBuyPricing(): Promise<DcBuyPricing> {
   const s = await ensureLoaded();
   const v = valueReport(s, Date.now());
   const supply = totalDcSupply(s);
-  const c = config.dc;
-  const S = Math.max(1, supply); // near-empty market reads "scarce"
-  const rawM = Math.pow(c.refSupply / S, c.supplyGamma);
-  const m = Math.min(c.clampMax, Math.max(c.clampMin, rawM));
-  const perDcCc = round2(c.bulkMax * m);
-  const bdtPerDc = round2(perDcCc * v.bdtPerCC);
-  const tiers = [100, 200, 500, 1000].map((bdt) => ({
-    bdt,
-    dc: bdtPerDc > 0 ? round2(bdt / bdtPerDc) : 0,
-  }));
-  return {
-    bdtPerCC: v.bdtPerCC,
-    perDcCc,
-    bdtPerDc,
-    multiplier: round2(m),
-    supply: round2(supply),
-    tiers,
+  const bdtPerCC = v.bdtPerCC;
+
+  // DC that converts back to exactly `bdt` taka at the live rate.
+  const dcForBdt = (bdt: number): number => {
+    if (bdtPerCC <= 0) return 0;
+    const targetCc = bdt / bdtPerCC;
+    let lo = 0;
+    let hi = 1;
+    while (quoteDcToCc(hi, supply).cc < targetCc && hi < 1e9) hi *= 2;
+    for (let i = 0; i < 60; i++) {
+      const mid = (lo + hi) / 2;
+      if (quoteDcToCc(mid, supply).cc < targetCc) lo = mid;
+      else hi = mid;
+    }
+    return round2((lo + hi) / 2);
   };
+
+  const tiers = [100, 200, 500, 1000].map((bdt) => ({ bdt, dc: dcForBdt(bdt) }));
+  // Headline "1 DC ≈ ৳X" taken from the ৳100 tier so it always matches the tiles.
+  const bdtPerDc = tiers[0].dc > 0 ? round2(tiers[0].bdt / tiers[0].dc) : 0;
+  return { bdtPerCC, bdtPerDc, supply: round2(supply), tiers };
 }
 
 /** True for the one member allowed to record real-money DC purchases. */

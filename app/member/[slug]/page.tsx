@@ -23,6 +23,7 @@ import {
   AlertTriangle,
   PieChart,
   Sparkles,
+  Banknote,
 } from "lucide-react";
 
 type Tx = {
@@ -120,13 +121,17 @@ function StatCard({
 
 function describe(t: Tx): { Icon: Icon; tone: string; amtTone: string; sign: string; text: string } {
   const memo = t.memo ? ` · ${t.memo}` : "";
+  // Real-money DC purchase: the memo already reads "Bought N DC for ৳X → …".
+  if (t.type === "PURCHASE") {
+    return { Icon: Banknote, tone: "text-flame", amtTone: "text-flame", sign: "+", text: t.memo || "Bought DC" };
+  }
   switch (t.direction) {
     case "in":
       return { Icon: ArrowDownLeft, tone: "text-teal-300", amtTone: "text-teal-300", sign: "+", text: `Received from ${t.counterpartyName}${memo}` };
     case "out":
-      return { Icon: ArrowUpRight, tone: "text-gold-300", amtTone: "text-white", sign: "−", text: `Sent to ${t.counterpartyName}${memo}` };
+      return { Icon: ArrowUpRight, tone: "text-red-300", amtTone: "text-red-300", sign: "−", text: `Sent to ${t.counterpartyName}${memo}` };
     case "mine":
-      return { Icon: Pickaxe, tone: "text-ember-400", amtTone: "text-ember-300", sign: "+", text: `Mined${memo}` };
+      return { Icon: Pickaxe, tone: "text-flame", amtTone: "text-flame", sign: "+", text: `Mined${memo}` };
     case "burn":
       return { Icon: Flame, tone: "text-orange-300", amtTone: "text-orange-300", sign: "−", text: "Burned to unlock mining" };
     default:
@@ -211,7 +216,7 @@ function MemberProfile() {
 
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
         <StatCard icon={Wallet} label="CC balance" value={`${formatCC(p.balance)} CC`} tone={negative ? "text-red-300" : "text-gold-300"} />
-        <StatCard iconNode={<DarkCoinLogo size={14} />} label="DC balance" value={`${formatDC(p.dcBalance)} DC`} tone="text-ember-300" />
+        <StatCard iconNode={<DarkCoinLogo size={14} />} label="DC balance" value={`${formatDC(p.dcBalance)} DC`} tone="text-flame" />
         <StatCard icon={Trophy} label="Rank" value={`#${p.rank} of ${p.memberCount}`} />
         <StatCard
           icon={PieChart}
@@ -230,7 +235,7 @@ function MemberProfile() {
         <StatCard icon={ArrowDownLeft} label="Received" value={`${formatCC(p.stats.received)} CC`} tone="text-teal-300" />
         <StatCard icon={ArrowUpRight} label="Sent" value={`${formatCC(p.stats.sent)} CC`} />
         <StatCard icon={ArrowLeftRight} label="Trades" value={`${p.stats.tradeCount}`} />
-        <StatCard icon={Pickaxe} iconTone="text-ember-400" label={`Mined (${p.stats.timesMined}×)`} value={`${formatDC(p.stats.totalMined)} DC`} tone="text-ember-300" />
+        <StatCard icon={Pickaxe} iconTone="text-flame" label={`Mined (${p.stats.timesMined}×)`} value={`${formatDC(p.stats.totalMined)} DC`} tone="text-flame" />
       </div>
 
       <BalanceHistoryCard slug={slug} />

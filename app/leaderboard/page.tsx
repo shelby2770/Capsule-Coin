@@ -120,8 +120,8 @@ function Leaderboard() {
   }, [data, isDc]);
 
   const medal = MEDAL[view];
-  const accent = isDc ? "text-ember-400" : "text-gold-400";
-  const amountTone = isDc ? "text-ember-300" : "text-gold-300";
+  const accent = isDc ? "text-flame" : "text-gold-400";
+  const amountTone = isDc ? "text-flame" : "text-gold-300";
   const barGrad = isDc ? "from-ember-400 to-ember-600" : "from-gold-400 to-gold-600";
   const total = isDc ? data?.totalDc : data?.totalSupply;
   const fmt = isDc ? formatDC : formatCC;

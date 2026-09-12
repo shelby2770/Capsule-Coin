@@ -135,6 +135,9 @@ function ActivityRow({ tx, email }: { tx: TransactionPublic; email: string }) {
   const incoming = tx.toEmail === email;
   const delta = incoming ? tx.amountCC : -tx.amountCC;
   const when = new Date(tx.createdAt);
+  // DC carries its own flame accent; CC reads green in / red out.
+  const amtTone =
+    tx.currency === "DC" ? "text-flame" : delta >= 0 ? "text-teal-300" : "text-red-300";
   return (
     <div className="flex items-center gap-3 py-2">
       <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-2xl bg-white/5 text-mute">
@@ -147,7 +150,7 @@ function ActivityRow({ tx, email }: { tx: TransactionPublic; email: string }) {
           {when.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
         </div>
       </div>
-      <div className={`text-sm font-semibold ${delta >= 0 ? "text-teal-300" : "text-mute"}`}>
+      <div className={`text-sm font-semibold ${amtTone}`}>
         {delta >= 0 ? "+" : "−"}
         {tx.currency === "DC" ? formatDC(Math.abs(delta)) : formatCC(Math.abs(delta))}{" "}
         {tx.currency}
@@ -225,7 +228,7 @@ function WalletHome() {
                 <CountUp
                   value={dcBalance}
                   format={formatDC}
-                  className="text-4xl font-bold text-white sm:text-5xl"
+                  className="text-4xl font-bold text-gradient-flame sm:text-5xl"
                 />
                 <span className="text-lg font-semibold text-ember-400">DC</span>
               </div>

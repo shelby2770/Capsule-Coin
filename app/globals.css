@@ -136,6 +136,18 @@
     background-clip: text;
     color: transparent;
   }
+  /* Dark Capsule Coin accent — a "golden flame": a hot gold core falling off into
+     ember. Distinct from CC's flat gold, and richer than the old flat ember. Use
+     .text-gradient-flame on prominent DC numerals, .text-flame for small inline ones. */
+  .text-gradient-flame {
+    background: linear-gradient(95deg, #ffd666, #fdba74 34%, #f97316 74%, #ea580c);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .text-flame {
+    color: #fbb03b;
+  }
   .btn-ember {
     color: #180d06;
     background: linear-gradient(180deg, #fb923c 0%, #ea580c 100%);
