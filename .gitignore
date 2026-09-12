@@ -22,6 +22,9 @@ next-env.d.ts
 *firebase-adminsdk*.json
 serviceAccount*.json
 
+# dev-only staged custom tokens (exchangeable — never commit or deploy)
+/public/__devtokens.json
+
 # misc
 .DS_Store
 *.pem

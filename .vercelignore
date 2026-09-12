@@ -1,0 +1,2 @@
+# Never deploy dev-only staged custom tokens (exchangeable Firebase tokens).
+public/__devtokens.json

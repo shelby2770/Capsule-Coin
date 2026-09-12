@@ -5,7 +5,7 @@ import { AppShell } from "@/components/AppShell";
 import { useAuth } from "@/components/AuthProvider";
 import { DarkCoinLogo } from "@/components/DarkCoinLogo";
 import { formatBdt, formatDC, toBanglaDigits } from "@/lib/format";
-import { Apple, Banknote, Crown, Loader2, Plus, Sparkles, Sprout } from "lucide-react";
+import { Apple, Award, Banknote, Crown, Loader2, Plus, Sprout } from "lucide-react";
 
 type Purchase = {
   name: string;
@@ -161,7 +161,7 @@ function Fund() {
           </div>
           <div className="min-w-0">
             <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-gold-300/90">
-              <Sparkles size={12} /> Fruit Minister
+              <Award size={12} /> Fruit Minister
             </div>
             <h2 className="mt-1 truncate font-display text-2xl font-bold text-white">
               {ministerName}

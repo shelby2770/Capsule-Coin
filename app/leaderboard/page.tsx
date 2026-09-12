@@ -167,7 +167,7 @@ function Leaderboard() {
         <div className={`${isDc ? "dc-card" : "cc-card"} p-4`}>
           <div className="flex items-center gap-2 text-xs text-mute">
             <Layers size={14} className={accent} />{" "}
-            {isDc ? "Total DC" : "Total supply"}
+            {isDc ? "Total Dark Capsule Coin" : "Total Capsule Coin"}
           </div>
           <div className="mt-1 text-xl font-bold text-white">
             {data ? fmt(total ?? 0) : "—"}{" "}

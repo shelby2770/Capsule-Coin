@@ -12,6 +12,7 @@ import {
   ArrowRight,
   ArrowLeft,
   Sparkles,
+  Coins,
 } from "lucide-react";
 
 type Step = {
@@ -29,7 +30,12 @@ const STEPS: Step[] = [
   {
     icon: Flame,
     title: "Meet Dark Capsule Coin — DC 🔥",
-    body: "DC is the elite coin: rarer and more powerful than CC, forged rather than spent on lunch. From now on, every kind of mining yields DC instead of CC.",
+    body: "DC is the elite coin — rarer and more powerful than CC, forged rather than spent on lunch. You mine it, hold it, trade it, and convert it back to CC when you want.",
+  },
+  {
+    icon: Coins,
+    title: "Your mining history came with you",
+    body: "Nothing you earned was lost. Every CC you ever mined has been converted into DC and moved to your DC wallet, and your past mines now read in DC on your history. Your effort, upgraded to the elite coin.",
   },
   {
     icon: Pickaxe,
