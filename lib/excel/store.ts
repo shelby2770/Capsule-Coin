@@ -1963,7 +1963,10 @@ function dcConvertedToday(s: LedgerState, email: string, nowMs: number): number 
 
 /**
  * Pure DC->CC quote. CC = x * b(x) * m(S):
- *   b(x) = bulkMax - bulkSpread * e^(-x/bulkScale)               (bounded bulk bonus)
+ *   b(x) = min(bulkRateMax, bulkFloor + bulkLogGain*ln(x) + bulkTailGain*x^bulkTailPow)
+ *          (bulk curve: a low floor for small conversions, a gentle log rise through
+ *           the middle, an accelerating power-law tail so large conversions keep
+ *           improving — ~1.0 CC/DC at 1000 DC, ~2.0 at 2000; capped bulkRateMax)
  *   m(S) = clamp((refSupply/S)^supplyGamma, clampMin, clampMax)  (scarcity = value)
  * S = total DC held across all members, so the whole group's DC supply sets the
  * rate (more DC in circulation → lower rate). Independent of the money→DC buy rate:
@@ -1976,7 +1979,16 @@ export function quoteDcToCc(
 ): { cc: number; perDc: number; multiplier: number } {
   const c = config.dc;
   const x = Math.max(0, Number(dcAmount) || 0);
-  const bulk = c.bulkMax - c.bulkSpread * Math.exp(-x / Math.max(1e-9, c.bulkScale));
+  // Bulk curve: a low floor for tiny conversions, a gentle logarithmic rise through the
+  // middle, and an accelerating power-law tail so large conversions keep earning a
+  // better per-DC rate (crossing 1.0 CC/DC ~1000 DC). Clamped [0, bulkRateMax]; the log
+  // argument is floored at 1 so sub-1 amounts just get the floor (no -Infinity).
+  const bulk = Math.min(
+    c.bulkRateMax,
+    c.bulkFloor +
+      c.bulkLogGain * Math.log(Math.max(1, x)) +
+      c.bulkTailGain * Math.pow(x, c.bulkTailPow),
+  );
   const S = Math.max(1, dcSupply); // guard div-by-zero; a near-empty market reads "scarce"
   const rawM = Math.pow(c.refSupply / S, c.supplyGamma);
   const m = Math.min(c.clampMax, Math.max(c.clampMin, rawM));

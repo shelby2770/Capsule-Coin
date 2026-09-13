@@ -65,15 +65,21 @@ export const config = {
   // Dark Capsule Coin (DC) — the elite second currency. Mining mints DC; DC is spent
   // on non-food trades (DesertHouse/Gemini-routed) and converts back to CC.
   dc: {
-    // DC->CC conversion: CC = x * b(x) * m(S), fitted to 2DC->1, 10->6, 20->13.
-    //   b(x) = bulkMax - bulkSpread * e^(-x / bulkScale)  — per-DC rate, rises with
-    //          size, bounded at ~bulkMax (~0.68 CC/DC).
+    // DC->CC conversion: CC = x * b(x) * m(S).
+    //   b(x) = min(bulkRateMax, bulkFloor + bulkLogGain*ln(x) + bulkTailGain*x^bulkTailPow)
+    //          per-DC rate: a low FLOOR for small conversions, a gentle LOGARITHMIC rise
+    //          through the middle, and an accelerating POWER-LAW tail so large conversions
+    //          keep earning a better rate instead of plateauing (crosses 1.0 CC/DC ~1000
+    //          DC, ~2.0 by 2000). Fitted to 1->0.3, 10->0.4, 100->0.5, 500->0.7, 1000->1.0,
+    //          1500->1.5, 2000->2.0 (base, before the supply multiplier). Clamped [0, rateMax].
     //   m(S) = clamp((refSupply / S)^supplyGamma, clampMin, clampMax)  — scarcity =
-    //          value: MORE total DC in circulation => LESS CC per DC.
+    //          value: MORE total DC in circulation => LESS CC per DC (shown "supply ×N").
     // S = sum of every member's dcBalance. Retune refSupply to the post-migration total.
-    bulkMax: num(process.env.DC_BULK_MAX, 0.677),
-    bulkSpread: num(process.env.DC_BULK_SPREAD, 0.218),
-    bulkScale: num(process.env.DC_BULK_SCALE, 9.615), // = 1 / 0.104
+    bulkFloor: num(process.env.DC_BULK_FLOOR, 0.3), // per-DC rate for the smallest conversions
+    bulkLogGain: num(process.env.DC_BULK_LOG_GAIN, 0.04), // gentle log rise through the middle
+    bulkTailGain: num(process.env.DC_BULK_TAIL_GAIN, 5.4e-6), // accelerating bulk reward:
+    bulkTailPow: num(process.env.DC_BULK_TAIL_POW, 1.64), //   ...bulkTailGain * x^bulkTailPow
+    bulkRateMax: num(process.env.DC_BULK_RATE_MAX, 3.0), // safety ceiling on b(x)
     refSupply: num(process.env.DC_REF_SUPPLY, 200),
     supplyGamma: num(process.env.DC_SUPPLY_GAMMA, 0.4),
     clampMin: num(process.env.DC_CLAMP_MIN, 0.5),
