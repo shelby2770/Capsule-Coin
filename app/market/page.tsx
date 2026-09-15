@@ -8,12 +8,14 @@ import { useOffers } from "@/lib/useOffers";
 import { useValue } from "@/lib/useValue";
 import { useLeaderboard } from "@/lib/useLeaderboard";
 import { useTransfers } from "@/lib/useTransfers";
+import { useNegotiations } from "@/lib/useNegotiations";
 import { emitLedgerChange } from "@/lib/ledgerEvents";
 import { formatCC, round2 } from "@/lib/format";
 import type {
   OfferPublic,
   OfferType,
   TransferRequestPublic,
+  NegotiationPublic,
 } from "@/lib/types";
 import {
   Store,
@@ -21,6 +23,8 @@ import {
   Tag,
   ShoppingCart,
   HandCoins,
+  Handshake,
+  MessageSquare,
   X,
   Loader2,
   AlertCircle,
@@ -63,14 +67,16 @@ export default function MarketPage() {
   );
 }
 
-type View = "offers" | "transfers";
+type View = "offers" | "negotiations" | "transfers";
 
 function Market() {
   const { member } = useAuth();
   const { data: transfers } = useTransfers();
+  const { negotiations } = useNegotiations();
   const [view, setView] = useState<View>("offers");
   const balance = member?.balance ?? 0;
   const pendingForMe = transfers?.pendingForMe ?? 0;
+  const negotiateForMe = (negotiations ?? []).filter((n) => n.yourTurn).length;
 
   return (
     <div className="space-y-4">
@@ -85,9 +91,20 @@ function Market() {
       </div>
 
       {/* view switch */}
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
         <SwitchButton active={view === "offers"} onClick={() => setView("offers")}>
           <Store size={15} /> Offers
+        </SwitchButton>
+        <SwitchButton
+          active={view === "negotiations"}
+          onClick={() => setView("negotiations")}
+        >
+          <Handshake size={15} /> Negotiations
+          {negotiateForMe > 0 && (
+            <span className="ml-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-gold-500 px-1.5 text-[11px] font-bold text-ink-900">
+              {negotiateForMe}
+            </span>
+          )}
         </SwitchButton>
         <SwitchButton
           active={view === "transfers"}
@@ -102,7 +119,13 @@ function Market() {
         </SwitchButton>
       </div>
 
-      {view === "offers" ? <OffersView /> : <TransfersView />}
+      {view === "offers" ? (
+        <OffersView onGoToNegotiations={() => setView("negotiations")} />
+      ) : view === "negotiations" ? (
+        <NegotiationsView />
+      ) : (
+        <TransfersView />
+      )}
     </div>
   );
 }
@@ -133,8 +156,9 @@ function SwitchButton({
 // ── Offers marketplace ───────────────────────────────────────────────────────
 type Busy = { id: string; action: "accept" | "cancel" } | null;
 
-function OffersView() {
+function OffersView({ onGoToNegotiations }: { onGoToNegotiations: () => void }) {
   const { member, refresh: refreshMe, authedFetch } = useAuth();
+  const toast = useToast();
   const { offers, loading, error, refresh } = useOffers();
   const { data: value } = useValue();
   const floor = value?.balanceFloor ?? -500;
@@ -185,6 +209,37 @@ function OffersView() {
       setActionError("Network error. Try again.");
     } finally {
       setBusy(null);
+    }
+  }
+
+  // Open a haggle on a SELL offer. Returns an error string for inline display, or
+  // null on success (and jumps to the Negotiations tab so they can track it).
+  async function negotiate(
+    offerId: string,
+    priceCC: number,
+    note: string,
+  ): Promise<string | null> {
+    try {
+      const res = await authedFetch(`/api/offers/${offerId}/negotiate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ priceCC, note }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        if (res.status === 429) {
+          toast.show(d.message || "Too many requests — slow down.", "warn");
+          return null;
+        }
+        return d.message || "Couldn't send that offer.";
+      }
+      await Promise.all([refresh(), refreshMe()]);
+      emitLedgerChange();
+      toast.show("Offer sent to the seller — track it under Negotiations.", "info");
+      onGoToNegotiations();
+      return null;
+    } catch {
+      return "Network error. Try again.";
     }
   }
 
@@ -360,6 +415,7 @@ function OffersView() {
               floor={floor}
               busy={busy}
               onAct={act}
+              onNegotiate={negotiate}
             />
           ))}
         </div>
@@ -398,6 +454,7 @@ function OfferCard({
   floor,
   busy,
   onAct,
+  onNegotiate,
 }: {
   offer: OfferPublic;
   mine: boolean;
@@ -405,9 +462,36 @@ function OfferCard({
   floor: number;
   busy: Busy;
   onAct: (id: string, action: "accept" | "cancel") => void;
+  onNegotiate: (offerId: string, priceCC: number, note: string) => Promise<string | null>;
 }) {
   const isSell = offer.type === "SELL";
   const working = busy?.id === offer.id;
+  const canBuy = balance - offer.priceCC >= floor;
+  const [showNeg, setShowNeg] = useState(false);
+  const [negPrice, setNegPrice] = useState("");
+  const [negNote, setNegNote] = useState("");
+  const [negBusy, setNegBusy] = useState(false);
+  const [negErr, setNegErr] = useState<string | null>(null);
+
+  async function submitNegotiation(e: React.FormEvent) {
+    e.preventDefault();
+    setNegErr(null);
+    const price = Math.floor(Number(negPrice));
+    if (!Number.isFinite(price) || price <= 0) {
+      setNegErr("Enter a positive whole-number price.");
+      return;
+    }
+    setNegBusy(true);
+    const err = await onNegotiate(offer.id, price, negNote.trim());
+    setNegBusy(false);
+    if (err) {
+      setNegErr(err);
+    } else {
+      setShowNeg(false);
+      setNegPrice("");
+      setNegNote("");
+    }
+  }
 
   return (
     <div className="capsule-card card-hover flex flex-col p-5">
@@ -474,20 +558,70 @@ function OfferCard({
             </p>
           )
         ) : isSell ? (
-          <button
-            className="btn-gold w-full"
-            disabled={working || balance - offer.priceCC < floor}
-            onClick={() => onAct(offer.id, "accept")}
-          >
-            {working ? (
-              <Loader2 size={16} className="animate-spin" />
-            ) : (
-              <ShoppingCart size={16} />
+          <div className="space-y-2">
+            <button
+              className="btn-gold w-full"
+              disabled={working || !canBuy}
+              onClick={() => onAct(offer.id, "accept")}
+            >
+              {working ? (
+                <Loader2 size={16} className="animate-spin" />
+              ) : (
+                <ShoppingCart size={16} />
+              )}
+              {!canBuy ? `Over ${floor} CC limit` : `Buy · ${formatCC(offer.priceCC)} CC`}
+            </button>
+            <button
+              className="btn-ghost w-full"
+              disabled={working}
+              onClick={() => setShowNeg((s) => !s)}
+            >
+              <Handshake size={16} />
+              {showNeg ? "Close" : "Negotiate price"}
+            </button>
+            {showNeg && (
+              <form
+                onSubmit={submitNegotiation}
+                className="space-y-2 rounded-2xl border border-edge/70 bg-ink-900/40 p-3"
+              >
+                <div>
+                  <label className="mb-1 block text-xs text-mute">
+                    Your offer (CC) · list is {formatCC(offer.priceCC)}
+                  </label>
+                  <input
+                    className="field"
+                    type="number"
+                    min={1}
+                    step={1}
+                    value={negPrice}
+                    onChange={(e) => setNegPrice(e.target.value)}
+                    placeholder={`e.g. ${Math.max(1, Math.floor(offer.priceCC * 0.9))}`}
+                    autoFocus
+                  />
+                </div>
+                <input
+                  className="field"
+                  value={negNote}
+                  onChange={(e) => setNegNote(e.target.value)}
+                  placeholder="Optional message (pickup, condition…)"
+                  maxLength={200}
+                />
+                {negErr && (
+                  <p className="flex items-center gap-1.5 text-xs text-red-300">
+                    <AlertCircle size={13} /> {negErr}
+                  </p>
+                )}
+                <button type="submit" className="btn-gold w-full" disabled={negBusy}>
+                  {negBusy ? (
+                    <Loader2 size={16} className="animate-spin" />
+                  ) : (
+                    <Send size={16} />
+                  )}
+                  Send offer to seller
+                </button>
+              </form>
             )}
-            {balance - offer.priceCC < floor
-              ? `Over ${floor} CC limit`
-              : `Buy · ${formatCC(offer.priceCC)} CC`}
-          </button>
+          </div>
         ) : (
           <button
             className="btn-gold w-full"
@@ -503,6 +637,301 @@ function OfferCard({
           </button>
         )}
       </div>
+    </div>
+  );
+}
+
+// ── Negotiations (haggle on SELL offers) ─────────────────────────────────────
+function NegotiationsView() {
+  const { refresh: refreshMe } = useAuth();
+  const { negotiations, refresh } = useNegotiations();
+  const list = negotiations ?? [];
+
+  const yourTurn = list.filter((n) => n.status === "OPEN" && n.yourTurn);
+  const waiting = list.filter((n) => n.status === "OPEN" && !n.yourTurn);
+  const closed = list.filter((n) => n.status !== "OPEN");
+
+  async function afterChange() {
+    await Promise.all([refresh(), refreshMe()]);
+    emitLedgerChange();
+  }
+
+  if (list.length === 0) {
+    return (
+      <div className="capsule-card p-10 text-center text-mute">
+        No negotiations yet. Open a sale under{" "}
+        <span className="text-white">Offers</span> and tap{" "}
+        <span className="text-white">Negotiate price</span> to make an offer.
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-5">
+      <NegSection title="Your move" icon={Handshake} accent="gold" items={yourTurn} onDone={afterChange} />
+      <NegSection title="Waiting on the other side" icon={Clock} items={waiting} onDone={afterChange} />
+      <NegSection title="Closed" icon={CheckCircle2} items={closed} onDone={afterChange} />
+    </div>
+  );
+}
+
+function NegSection({
+  title,
+  icon: Icon,
+  accent,
+  items,
+  onDone,
+}: {
+  title: string;
+  icon: React.ComponentType<{ size?: number; className?: string }>;
+  accent?: "gold";
+  items: NegotiationPublic[];
+  onDone: () => Promise<void>;
+}) {
+  if (items.length === 0) return null;
+  return (
+    <section>
+      <h2 className="mb-2 flex items-center gap-2 font-display text-sm font-semibold text-white">
+        <Icon size={16} className={accent === "gold" ? "text-gold-400" : "text-teal-400"} />
+        {title}
+        <span className="text-xs font-normal text-mute">· {items.length}</span>
+      </h2>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        {items.map((n) => (
+          <NegotiationCard key={n.id} n={n} onDone={onDone} />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function negStatusChip(status: NegotiationPublic["status"]) {
+  switch (status) {
+    case "ACCEPTED":
+      return { label: "Deal", cls: "border-teal-500/40 text-teal-300" };
+    case "DECLINED":
+      return { label: "Declined", cls: "border-red-500/40 text-red-300" };
+    case "WITHDRAWN":
+      return { label: "Withdrawn", cls: "border-white/15 text-mute" };
+    case "CANCELLED":
+      return { label: "Closed", cls: "border-white/15 text-mute" };
+    default:
+      return { label: "Open", cls: "border-gold-500/40 text-gold-300" };
+  }
+}
+
+function NegotiationCard({
+  n,
+  onDone,
+}: {
+  n: NegotiationPublic;
+  onDone: () => Promise<void>;
+}) {
+  const { authedFetch } = useAuth();
+  const toast = useToast();
+  const [busy, setBusy] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [showCounter, setShowCounter] = useState(false);
+  const [counterPrice, setCounterPrice] = useState("");
+  const [counterNote, setCounterNote] = useState("");
+
+  const isBuyer = n.role === "buyer";
+  const other = isBuyer ? n.sellerName : n.buyerName;
+  const chip = negStatusChip(n.status);
+
+  async function respond(
+    action: "accept" | "counter" | "decline",
+    priceCC?: number,
+    note?: string,
+  ) {
+    setBusy(action);
+    setErr(null);
+    try {
+      const res = await authedFetch(`/api/negotiations/${n.id}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, priceCC, note }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        if (res.status === 429) toast.show(d.message || "Too many requests — slow down.", "warn");
+        else setErr(d.message || "That didn't work.");
+      } else {
+        if (action === "accept" && d.settled) {
+          toast.show(`Deal — ${formatCC(n.currentPriceCC)} CC.`, "info");
+        }
+        setShowCounter(false);
+        setCounterPrice("");
+        setCounterNote("");
+        await onDone();
+      }
+    } catch {
+      setErr("Network error.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function submitCounter(e: React.FormEvent) {
+    e.preventDefault();
+    const price = Math.floor(Number(counterPrice));
+    if (!Number.isFinite(price) || price <= 0) {
+      setErr("Enter a positive whole-number price.");
+      return;
+    }
+    await respond("counter", price, counterNote.trim());
+  }
+
+  return (
+    <div className="capsule-card flex flex-col p-4">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <span
+            className={`chip ${
+              isBuyer ? "border-gold-500/40 text-gold-300" : "border-teal-500/40 text-teal-300"
+            }`}
+          >
+            {isBuyer ? "You're buying" : "You're selling"}
+          </span>
+          <h3 className="mt-2 truncate font-semibold text-white">{n.itemName}</h3>
+          <p className="mt-0.5 truncate text-xs text-mute">
+            with {other}
+            {n.listPriceCC != null ? ` · list ${formatCC(n.listPriceCC)} CC` : ""}
+          </p>
+        </div>
+        <span className={`chip shrink-0 ${chip.cls}`}>{chip.label}</span>
+      </div>
+
+      {/* price back-and-forth */}
+      <div className="mt-3 space-y-1 rounded-2xl border border-white/5 bg-ink-900/40 p-3">
+        {n.messages.map((m, i) => (
+          <div key={i} className="flex items-baseline justify-between gap-2 text-xs">
+            <span className="min-w-0 truncate text-mute">
+              {m.by === "BUYER" ? n.buyerName : n.sellerName}
+              {m.note ? <span className="text-mute/70"> · {m.note}</span> : ""}
+            </span>
+            <span className="shrink-0 font-semibold text-white">{formatCC(m.priceCC)} CC</span>
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-3 flex items-baseline gap-1">
+        <span className="text-xs text-mute">Standing offer</span>
+        <span className="ml-auto text-xl font-bold text-gold-300">
+          {formatCC(n.currentPriceCC)}
+        </span>
+        <span className="text-xs text-mute">CC</span>
+      </div>
+
+      {err && (
+        <p className="mt-2 flex items-center gap-1.5 text-xs text-red-300">
+          <AlertCircle size={13} /> {err}
+        </p>
+      )}
+
+      {n.status === "OPEN" && n.yourTurn && (
+        <div className="mt-3 border-t border-white/5 pt-3">
+          {!showCounter ? (
+            <div className="flex flex-wrap gap-2">
+              <button
+                className="btn-gold flex-1 py-2 text-sm"
+                disabled={!!busy}
+                onClick={() => respond("accept")}
+              >
+                {busy === "accept" ? (
+                  <Loader2 size={14} className="animate-spin" />
+                ) : (
+                  <Check size={14} />
+                )}
+                Accept {formatCC(n.currentPriceCC)} CC
+              </button>
+              <button
+                className="btn-ghost flex-1 py-2 text-sm"
+                disabled={!!busy}
+                onClick={() => setShowCounter(true)}
+              >
+                <MessageSquare size={14} /> Counter
+              </button>
+              <button
+                className="btn-ghost flex-1 py-2 text-sm text-red-300 hover:border-red-400/50 hover:text-red-200"
+                disabled={!!busy}
+                onClick={() => respond("decline")}
+              >
+                {busy === "decline" ? (
+                  <Loader2 size={14} className="animate-spin" />
+                ) : (
+                  <X size={14} />
+                )}
+                {isBuyer ? "Withdraw" : "Decline"}
+              </button>
+            </div>
+          ) : (
+            <form onSubmit={submitCounter} className="space-y-2">
+              <input
+                className="field"
+                type="number"
+                min={1}
+                step={1}
+                value={counterPrice}
+                onChange={(e) => setCounterPrice(e.target.value)}
+                placeholder="Your counter (CC)"
+                autoFocus
+              />
+              <input
+                className="field"
+                value={counterNote}
+                onChange={(e) => setCounterNote(e.target.value)}
+                placeholder="Optional message"
+                maxLength={200}
+              />
+              <div className="flex gap-2">
+                <button type="submit" className="btn-gold flex-1 py-2 text-sm" disabled={busy === "counter"}>
+                  {busy === "counter" ? (
+                    <Loader2 size={14} className="animate-spin" />
+                  ) : (
+                    <Send size={14} />
+                  )}
+                  Send counter
+                </button>
+                <button
+                  type="button"
+                  className="btn-ghost py-2 text-sm"
+                  onClick={() => setShowCounter(false)}
+                  disabled={!!busy}
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          )}
+        </div>
+      )}
+
+      {n.status === "OPEN" && !n.yourTurn && (
+        <div className="mt-3 flex items-center justify-between gap-2 border-t border-white/5 pt-3">
+          <span className="flex items-center gap-1.5 text-xs text-mute">
+            <Clock size={13} /> Waiting on {other}
+          </span>
+          <button
+            className="btn-ghost py-1.5 text-xs text-red-300 hover:border-red-400/50 hover:text-red-200"
+            disabled={!!busy}
+            onClick={() => respond("decline")}
+          >
+            {busy === "decline" ? (
+              <Loader2 size={13} className="animate-spin" />
+            ) : (
+              <X size={13} />
+            )}
+            {isBuyer ? "Withdraw" : "Decline"}
+          </button>
+        </div>
+      )}
+
+      {n.status === "ACCEPTED" && (
+        <p className="mt-3 flex items-center gap-1.5 border-t border-white/5 pt-3 text-sm text-teal-300">
+          <CheckCircle2 size={14} /> Deal closed at {formatCC(n.currentPriceCC)} CC
+        </p>
+      )}
     </div>
   );
 }

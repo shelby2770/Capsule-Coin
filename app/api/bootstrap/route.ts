@@ -1,8 +1,18 @@
 import { NextResponse } from "next/server";
 import { requireMember } from "@/lib/auth/verify";
-import { readState, expireStaleTransfers } from "@/lib/excel/store";
-import type { Transaction, TransferRequest, Member } from "@/lib/excel/store";
-import { valueReport } from "@/lib/value";
+import {
+  readState,
+  expireStaleTransfers,
+  expireStaleOffers,
+} from "@/lib/excel/store";
+import type {
+  Transaction,
+  TransferRequest,
+  Member,
+  Offer,
+  LedgerState,
+} from "@/lib/excel/store";
+import { valueReport, dcRateReport } from "@/lib/value";
 import { ALLOWLIST, normalizeEmail } from "@/lib/allowlist";
 import { gateResponse } from "@/lib/http";
 import type {
@@ -11,6 +21,8 @@ import type {
   TransfersResponse,
   TransferRequestPublic,
   TransactionPublic,
+  OfferFeedItem,
+  NegotiationPublic,
 } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -28,17 +40,74 @@ export async function GET(req: Request) {
   if (!gate.ok) return gateResponse(gate.status);
   const me = normalizeEmail(gate.identity.email);
 
-  // Same lazy cleanup the transfers route does; best-effort.
+  // Same lazy cleanup the transfers + offers routes do; best-effort.
   await expireStaleTransfers().catch(() => {});
+  await expireStaleOffers().catch(() => {});
   const state = await readState();
   const now = Date.now();
 
   return NextResponse.json({
     leaderboard: buildLeaderboard(state.members, me),
     value: valueReport(state, now),
+    dcRate: dcRateReport(state, now),
     transfers: shapeTransfers(state.transfers, me),
     transactions: myTransactions(state.transactions, me),
+    recentOffers: recentOffers(state.offers),
+    negotiations: shapeNegotiations(state, me),
   });
+}
+
+// ── Negotiations the viewer is part of (as buyer or seller) ──────────────────
+function shapeNegotiations(state: LedgerState, me: string): NegotiationPublic[] {
+  const offerById = new Map(state.offers.map((o) => [o.id, o]));
+  return state.negotiations
+    .filter((n) => n.buyerEmail === me || n.sellerEmail === me)
+    .sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt))
+    .map((n) => {
+      const role: "buyer" | "seller" = n.sellerEmail === me ? "seller" : "buyer";
+      const offer = offerById.get(n.offerId);
+      const yourTurn =
+        n.status === "OPEN" &&
+        ((role === "seller" && n.turn === "SELLER") ||
+          (role === "buyer" && n.turn === "BUYER"));
+      return {
+        id: n.id,
+        offerId: n.offerId,
+        itemName: n.itemName,
+        sellerName: n.sellerName,
+        buyerName: n.buyerName,
+        status: n.status,
+        currentPriceCC: n.currentPriceCC,
+        listPriceCC: offer && offer.status === "OPEN" ? offer.priceCC : null,
+        turn: n.turn,
+        role,
+        yourTurn,
+        messages: n.messages,
+        createdAt: n.createdAt,
+        updatedAt: n.updatedAt,
+        closedAt: n.closedAt,
+      };
+    });
+}
+
+// ── Marketplace broadcast feed: recent OPEN offers, newest first ─────────────
+// Every member sees the same list; the notifications bell filters out the
+// viewer's own so it reads as "what others just posted".
+function recentOffers(offers: Offer[]): OfferFeedItem[] {
+  return offers
+    .filter((o) => o.status === "OPEN")
+    .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
+    .slice(0, 20)
+    .map((o) => ({
+      id: o.id,
+      type: o.type,
+      itemName: o.itemName,
+      category: o.category,
+      priceCC: o.priceCC,
+      creatorName: o.creatorName,
+      creatorEmail: o.creatorEmail,
+      createdAt: o.createdAt,
+    }));
 }
 
 // ── mirrors app/api/leaderboard/route.ts ────────────────────────────────────

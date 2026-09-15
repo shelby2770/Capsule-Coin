@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/components/AuthProvider";
 import { useTransfers } from "@/lib/useTransfers";
+import { useNegotiations } from "@/lib/useNegotiations";
 import { CoinLogo } from "@/components/CoinLogo";
 import { Skeleton } from "@/components/Skeleton";
 import { NotificationsBell } from "@/components/NotificationsBell";
@@ -102,9 +103,13 @@ function LoadingShell() {
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { status, member, email, signOut, lock, locked } = useAuth();
   const { data: transfers } = useTransfers();
+  const { negotiations } = useNegotiations();
   const router = useRouter();
   const pathname = usePathname();
   const pendingForMe = transfers?.pendingForMe ?? 0;
+  const negotiateForMe = (negotiations ?? []).filter((n) => n.yourTurn).length;
+  // The Market nav pill flags anything on the member: transfer approvals + haggles awaiting their move.
+  const marketBadge = pendingForMe + negotiateForMe;
   // Your own profile — same /member/<slug> route the leaderboard rows link to.
   const meSlug = (member?.email || email || "").split("@")[0];
 
@@ -246,9 +251,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               }
             >
               <item.icon size={16} /> {item.label}
-              {item.href === "/market" && pendingForMe > 0 && (
+              {item.href === "/market" && marketBadge > 0 && (
                 <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-gold-500 px-1.5 text-[11px] font-bold text-ink-900">
-                  {pendingForMe}
+                  {marketBadge}
                 </span>
               )}
             </Link>

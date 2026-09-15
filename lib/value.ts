@@ -1,6 +1,7 @@
 import "server-only";
 
 import { config } from "@/lib/config";
+import { quoteDcToCc } from "@/lib/excel/store";
 import type { LedgerState } from "@/lib/excel/store";
 
 /**
@@ -196,6 +197,86 @@ export function valueHistory(
   for (let i = 0; i <= points; i++) {
     const t = Math.round(fromMs + (span * i) / points);
     out.push({ t, value: Number(bdtAt(state, t).toFixed(2)) });
+  }
+  return out;
+}
+
+// ── DC -> CC market rate ─────────────────────────────────────────────────────
+/**
+ * The DC->CC conversion rate has two parts (see store.quoteDcToCc): a fixed bulk
+ * curve b(x) that depends only on the amount converted, and a supply multiplier
+ * m(S) that is the ONLY market-driven, time-varying part. Charting the per-DC
+ * rate for a fixed reference amount therefore traces the market exactly: as the
+ * group mines more DC the supply S rises and the rate falls; converting DC away
+ * shrinks S and lifts it. The reference is 1 DC — the honest spot/marginal rate
+ * (bulk conversions earn more, shown live on /convert).
+ */
+const DC_RATE_REF = 1;
+
+/** Total DC in circulation as of time t, reconstructed from the ledger. */
+function dcSupplyAt(state: LedgerState, t: number): number {
+  let s = 0;
+  for (const tx of state.transactions) {
+    if (tx.currency !== "DC") continue;
+    const ts = Date.parse(tx.createdAt);
+    if (Number.isNaN(ts) || ts > t) continue;
+    // Minting adds DC; converting to CC destroys it; a DC trade just moves DC
+    // between two members, so it's supply-neutral and intentionally skipped.
+    if (tx.type === "MINE" || tx.type === "PURCHASE") s += tx.amountCC;
+    else if (tx.type === "CONVERT") s -= tx.amountCC;
+    else if (tx.type === "ADJUST") s += tx.toEmail ? tx.amountCC : -tx.amountCC;
+  }
+  return Math.max(0, Number(s.toFixed(2)));
+}
+
+/** DC->CC market-rate report for the dashboard card (spot rate + 24h series). */
+export function dcRateReport(state: LedgerState, now: number) {
+  const supply = dcSupplyAt(state, now);
+  const q = quoteDcToCc(DC_RATE_REF, supply);
+  const prev = quoteDcToCc(DC_RATE_REF, dcSupplyAt(state, now - DAY));
+  const hasDayHistory = state.transactions.some(
+    (t) => Date.parse(t.createdAt) <= now - DAY,
+  );
+  const change24h =
+    hasDayHistory && prev.perDc > 0
+      ? Number((((q.perDc - prev.perDc) / prev.perDc) * 100).toFixed(1))
+      : null;
+
+  const points = 24;
+  const series: Array<{ t: number; value: number }> = [];
+  for (let i = points; i >= 0; i--) {
+    const t = now - i * (DAY / points);
+    series.push({ t, value: quoteDcToCc(DC_RATE_REF, dcSupplyAt(state, t)).perDc });
+  }
+
+  return {
+    ccPerDc: q.perDc,
+    refAmount: DC_RATE_REF,
+    multiplier: q.multiplier,
+    supply,
+    change24h,
+    clampMin: config.dc.clampMin,
+    clampMax: config.dc.clampMax,
+    series,
+  };
+}
+
+/**
+ * A DC->CC per-DC rate series between two times, sampled at `points`+1 instants.
+ * Reconstructed exactly from the ledger (no stored history), mirroring
+ * valueHistory. Drives the DC rate history chart on /convert.
+ */
+export function dcRateHistory(
+  state: LedgerState,
+  now: number,
+  fromMs: number,
+  points = 48,
+): Array<{ t: number; value: number }> {
+  const span = Math.max(1, now - fromMs);
+  const out: Array<{ t: number; value: number }> = [];
+  for (let i = 0; i <= points; i++) {
+    const t = Math.round(fromMs + (span * i) / points);
+    out.push({ t, value: quoteDcToCc(DC_RATE_REF, dcSupplyAt(state, t)).perDc });
   }
   return out;
 }

@@ -5,8 +5,19 @@ import { AppShell } from "@/components/AppShell";
 import { useAuth } from "@/components/AuthProvider";
 import { DarkCoinLogo } from "@/components/DarkCoinLogo";
 import { StandingBanner } from "@/components/StandingBanner";
+import { DcRateChart } from "@/components/DcRateChart";
+import { useDcRateHistory, type DcRateRange } from "@/lib/useDcRateHistory";
+import { useDcRate } from "@/lib/useDcRate";
 import { formatCC, formatDC, round2 } from "@/lib/format";
-import { Repeat, Flame, Loader2, ArrowRight, TrendingUp, TrendingDown } from "lucide-react";
+import {
+  Repeat,
+  Flame,
+  Loader2,
+  ArrowRight,
+  TrendingUp,
+  TrendingDown,
+  LineChart,
+} from "lucide-react";
 
 type Quote = { cc: number; perDc: number; multiplier: number };
 type Status = {
@@ -215,6 +226,93 @@ function Convert() {
           </div>
         )}
       </div>
+
+      <DcRateHistorySection />
+    </div>
+  );
+}
+
+const RANGES: { key: DcRateRange; label: string }[] = [
+  { key: "24h", label: "24h" },
+  { key: "7d", label: "7 days" },
+  { key: "all", label: "All time" },
+];
+
+/**
+ * DC->CC market-rate history — the same spot rate (CC per 1 DC) shown on the
+ * dashboard card, plotted over time so members can compare today's rate against
+ * the trend. The rate moves with total DC supply: mining lowers it, converting
+ * DC back lifts it.
+ */
+function DcRateHistorySection() {
+  const [range, setRange] = useState<DcRateRange>("7d");
+  const { series, loading } = useDcRateHistory(range);
+  const { data: dc } = useDcRate();
+
+  const vals = series?.map((p) => p.value) ?? [];
+  const high = vals.length ? Math.max(...vals) : null;
+  const low = vals.length ? Math.min(...vals) : null;
+  const first = series?.[0]?.value ?? null;
+  const last = series?.[series.length - 1]?.value ?? null;
+  const change =
+    first != null && last != null && first > 0 ? ((last - first) / first) * 100 : null;
+
+  return (
+    <div className="dc-card p-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="flex items-center gap-2 font-display text-lg font-semibold text-white">
+          <LineChart size={18} className="text-ember-400" /> Market rate history
+        </h2>
+        <div className="flex flex-wrap items-baseline gap-x-2">
+          <span className="font-display text-2xl font-semibold text-gradient-flame">
+            {dc ? dc.ccPerDc.toFixed(2) : "—"}
+          </span>
+          <span className="text-sm text-mute">CC / DC now · supply ×{dc ? dc.multiplier : "—"}</span>
+        </div>
+      </div>
+
+      <div className="mt-4 flex gap-2">
+        {RANGES.map((r) => (
+          <button
+            key={r.key}
+            onClick={() => setRange(r.key)}
+            className={`rounded-capsule px-4 py-2 text-sm transition ${
+              range === r.key
+                ? "bg-ember-500/15 text-ember-300 shadow-glow-ember"
+                : "border border-edge text-mute hover:text-white"
+            }`}
+          >
+            {r.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="mt-4">
+        {loading && !series ? (
+          <div className="flex h-56 items-center justify-center gap-2 text-mute">
+            <Loader2 size={20} className="animate-spin text-ember-400" /> Loading history…
+          </div>
+        ) : (
+          <DcRateChart series={series ?? []} />
+        )}
+      </div>
+
+      <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <Stat
+          label={`${RANGES.find((r) => r.key === range)?.label} change`}
+          value={change == null ? "—" : `${change > 0 ? "+" : ""}${change.toFixed(1)}%`}
+        />
+        <Stat label="Range high" value={high == null ? "—" : `${high.toFixed(2)} CC`} />
+        <Stat label="Range low" value={low == null ? "—" : `${low.toFixed(2)} CC`} />
+        <Stat label="DC in market" value={dc ? formatDC(dc.supply) : "—"} ember />
+      </div>
+
+      <p className="mt-4 text-xs text-mute">
+        <span className="text-white">How it moves:</span> this is the rate for
+        converting 1 DC. Bigger conversions earn a higher per-DC rate. The whole
+        curve rises and falls with total DC in circulation — as the group mines
+        more DC it eases down; converting DC back to CC lifts it.
+      </p>
     </div>
   );
 }

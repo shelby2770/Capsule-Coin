@@ -71,6 +71,47 @@ export type Offer = {
   closedAt: string | null;
 };
 
+// ── Marketplace negotiation (haggle on a SELL offer) ────────────────────────
+export type NegotiationStatus =
+  | "OPEN" // still being haggled
+  | "ACCEPTED" // one side accepted the standing price → a TRADE settled
+  | "DECLINED" // the seller ended it
+  | "WITHDRAWN" // the buyer ended it
+  | "CANCELLED"; // the listing was sold/cancelled/expired out from under it
+export type NegotiationParty = "BUYER" | "SELLER";
+
+/** One step in a haggle: who proposed it, the price, an optional note. */
+export type NegotiationMessage = {
+  by: NegotiationParty;
+  priceCC: number;
+  note: string;
+  at: string; // ISO
+};
+
+/**
+ * A back-and-forth price negotiation between one buyer and the seller of a SELL
+ * offer. No CC moves while haggling; when the party whose turn it is ACCEPTS the
+ * standing price, it settles at that price via the normal TRADE path (same as
+ * buying at list price, just a negotiated amount).
+ */
+export type Negotiation = {
+  id: string;
+  offerId: string;
+  itemName: string; // snapshot, so a closed thread still reads well
+  sellerEmail: string;
+  sellerName: string;
+  buyerEmail: string;
+  buyerName: string;
+  status: NegotiationStatus;
+  currentPriceCC: number; // the latest proposed price (the standing offer)
+  turn: NegotiationParty; // who should respond next
+  messages: NegotiationMessage[];
+  createdAt: string;
+  updatedAt: string;
+  closedAt: string | null;
+  txId: string | null; // the settled TRADE, once accepted
+};
+
 export type TransferStatus =
   | "PENDING"
   | "APPROVED"
@@ -139,6 +180,9 @@ export type LedgerState = {
   offers: Offer[];
   transactions: Transaction[];
   transfers: TransferRequest[];
+  // Open/closed price negotiations on SELL offers (not hash-chained; the settled
+  // trade is the hash-chained TRADE transaction).
+  negotiations: Negotiation[];
   // Capsule Fruit Fund — running total (BDT) from DC bought with real money.
   // Maintained by the Fruit Minister (config.dc.fruitMinisterEmail).
   fruitFundBdt: number;
@@ -167,7 +211,7 @@ const ledgerRef = adminDb
   .doc(process.env.LEDGER_DOC_ID?.trim() || "state");
 
 function emptyState(): LedgerState {
-  return { members: [], offers: [], transactions: [], transfers: [], fruitFundBdt: 0 };
+  return { members: [], offers: [], transactions: [], transfers: [], negotiations: [], fruitFundBdt: 0 };
 }
 
 /**
@@ -195,6 +239,7 @@ function normalizeState(s: LedgerState): LedgerState {
     offers: Array.isArray(s.offers) ? s.offers : [],
     transactions,
     transfers: Array.isArray(s.transfers) ? s.transfers : [],
+    negotiations: Array.isArray(s.negotiations) ? s.negotiations : [],
     fruitFundBdt:
       typeof s.fruitFundBdt === "number" && Number.isFinite(s.fruitFundBdt)
         ? s.fruitFundBdt
@@ -1026,6 +1071,8 @@ export async function cancelOffer(
     }
     offer.status = "CANCELLED";
     offer.closedAt = new Date().toISOString();
+    // End any live haggling on this now-cancelled listing.
+    closeOpenNegotiations(draft, offer.id, "CANCELLED");
 
     let balance: number | null = null;
     if (offer.type === "BUY" && offer.escrowAmount > 0) {
@@ -1110,7 +1157,204 @@ export async function acceptOffer(
     offer.counterpartyEmail = me.email;
     offer.counterpartyName = me.name;
     offer.closedAt = new Date().toISOString();
+    // Any buyers still haggling on this item are out — it just sold.
+    closeOpenNegotiations(draft, offer.id, "CANCELLED");
     return { offer: { ...offer }, balance: me.balance };
+  });
+}
+
+// ── Marketplace negotiation (haggle on a SELL offer) ────────────────────────
+const NEGOTIATION_MAX_PRICE = 1_000_000;
+const NEGOTIATION_NOTE_MAX = 200;
+
+function isValidNegotiationPrice(p: number): boolean {
+  return Number.isInteger(p) && p > 0 && p <= NEGOTIATION_MAX_PRICE;
+}
+
+/** Close every still-OPEN negotiation on an offer (it sold, was cancelled, or expired). */
+function closeOpenNegotiations(
+  draft: LedgerState,
+  offerId: string,
+  status: NegotiationStatus,
+  exceptId?: string,
+): void {
+  const iso = new Date().toISOString();
+  for (const n of draft.negotiations) {
+    if (n.offerId !== offerId || n.status !== "OPEN" || n.id === exceptId) continue;
+    n.status = status;
+    n.updatedAt = iso;
+    n.closedAt = iso;
+  }
+}
+
+/**
+ * A buyer opens a price negotiation on a SELL offer with an initial proposed
+ * price (+ optional note). No CC moves; the seller responds next.
+ */
+export async function startNegotiation(
+  actor: { email: string; name: string },
+  offerId: string,
+  priceCC: number,
+  note: string,
+): Promise<{ negotiation: Negotiation }> {
+  return mutate((draft) => {
+    const me = ensureMemberDraft(draft, actor.email, actor.name);
+    const offer = draft.offers.find((o) => o.id === offerId);
+    if (!offer) throw new LedgerError("OFFER_NOT_FOUND", "Offer not found.");
+    if (offer.type !== "SELL") {
+      throw new LedgerError("NOT_SELL", "You can only negotiate on items that are for sale.");
+    }
+    if (offer.status !== "OPEN") {
+      throw new LedgerError("OFFER_NOT_OPEN", "This item is no longer available.");
+    }
+    if (offer.creatorEmail === me.email) {
+      throw new LedgerError("SELF_TRADE", "You can't negotiate on your own listing.");
+    }
+    const now = Date.now();
+    assertCanBuy(me, now); // a negotiation ends in a buy — blocked while banned / in grace
+
+    const price = Math.floor(Number(priceCC));
+    if (!isValidNegotiationPrice(price)) {
+      throw new LedgerError("INVALID", "Offer a positive whole number of CC.");
+    }
+    if (
+      draft.negotiations.some(
+        (n) => n.offerId === offerId && n.buyerEmail === me.email && n.status === "OPEN",
+      )
+    ) {
+      throw new LedgerError(
+        "NEGOTIATION_EXISTS",
+        "You already have an open negotiation on this item — respond to that one instead.",
+      );
+    }
+
+    const seller = draft.members.find((m) => m.email === offer.creatorEmail);
+    const iso = new Date(now).toISOString();
+    const negotiation: Negotiation = {
+      id: randomUUID(),
+      offerId,
+      itemName: offer.itemName,
+      sellerEmail: offer.creatorEmail,
+      sellerName: seller?.name || offer.creatorName,
+      buyerEmail: me.email,
+      buyerName: me.name,
+      status: "OPEN",
+      currentPriceCC: price,
+      turn: "SELLER", // buyer just proposed; the seller responds
+      messages: [
+        { by: "BUYER", priceCC: price, note: (note || "").trim().slice(0, NEGOTIATION_NOTE_MAX), at: iso },
+      ],
+      createdAt: iso,
+      updatedAt: iso,
+      closedAt: null,
+      txId: null,
+    };
+    draft.negotiations.push(negotiation);
+    return { negotiation: structuredClone(negotiation) };
+  });
+}
+
+export type NegotiationAction = "accept" | "counter" | "decline";
+
+/**
+ * Respond to a negotiation:
+ *   - "counter"  (your turn): propose a new price; the turn flips to the other side.
+ *   - "accept"   (your turn): settle at the standing price via a TRADE (buyer pays
+ *                seller); the offer completes and sibling negotiations are cancelled.
+ *   - "decline"  (either side, anytime): end the thread (seller → DECLINED, buyer
+ *                → WITHDRAWN). No CC moves.
+ */
+export async function respondNegotiation(
+  actor: { email: string; name: string },
+  negotiationId: string,
+  action: NegotiationAction,
+  priceCC?: number,
+  note?: string,
+): Promise<{ negotiation: Negotiation; balance: number | null; settled: boolean }> {
+  return mutate((draft) => {
+    const me = ensureMemberDraft(draft, actor.email, actor.name);
+    const n = draft.negotiations.find((x) => x.id === negotiationId);
+    if (!n) throw new LedgerError("NEGOTIATION_NOT_FOUND", "Negotiation not found.");
+    if (n.status !== "OPEN") {
+      throw new LedgerError("NEGOTIATION_CLOSED", "This negotiation is already closed.");
+    }
+    const role: NegotiationParty | null =
+      me.email === n.sellerEmail ? "SELLER" : me.email === n.buyerEmail ? "BUYER" : null;
+    if (!role) throw new LedgerError("NOT_PARTICIPANT", "You're not part of this negotiation.");
+
+    const now = Date.now();
+    const iso = new Date(now).toISOString();
+    const trimmedNote = (note || "").trim().slice(0, NEGOTIATION_NOTE_MAX);
+
+    if (action === "decline") {
+      n.status = role === "SELLER" ? "DECLINED" : "WITHDRAWN";
+      n.updatedAt = iso;
+      n.closedAt = iso;
+      if (trimmedNote) n.messages.push({ by: role, priceCC: n.currentPriceCC, note: trimmedNote, at: iso });
+      return { negotiation: structuredClone(n), balance: null, settled: false };
+    }
+
+    // accept & counter are replies to the OTHER side's standing proposal.
+    if (n.turn !== role) {
+      throw new LedgerError("NOT_YOUR_TURN", "It's the other person's turn to respond.");
+    }
+
+    if (action === "counter") {
+      const price = Math.floor(Number(priceCC));
+      if (!isValidNegotiationPrice(price)) {
+        throw new LedgerError("INVALID", "Counter with a positive whole number of CC.");
+      }
+      n.currentPriceCC = price;
+      n.turn = role === "SELLER" ? "BUYER" : "SELLER";
+      n.messages.push({ by: role, priceCC: price, note: trimmedNote, at: iso });
+      n.updatedAt = iso;
+      return { negotiation: structuredClone(n), balance: null, settled: false };
+    }
+
+    // action === "accept": settle at the standing price.
+    const offer = draft.offers.find((o) => o.id === n.offerId);
+    if (!offer || offer.status !== "OPEN") {
+      n.status = "CANCELLED";
+      n.updatedAt = iso;
+      n.closedAt = iso;
+      throw new LedgerError("OFFER_NOT_OPEN", "This item is no longer available.");
+    }
+    const price = n.currentPriceCC;
+    const buyer = ensureMemberDraft(draft, n.buyerEmail, n.buyerName);
+    const seller = ensureMemberDraft(draft, n.sellerEmail, n.sellerName);
+    assertCanSpendCc(buyer, price, now); // buyer must afford it now (respects floors/grace)
+    assertNotBanned(seller);
+
+    buyer.balance = round2(buyer.balance - price);
+    applyGraceAfterSpend(buyer, now);
+    seller.balance = round2(seller.balance + price);
+    refreshGrace(seller, now);
+
+    const tx = appendTransaction(draft, {
+      type: "TRADE",
+      fromEmail: buyer.email,
+      toEmail: seller.email,
+      amountCC: price,
+      offerId: offer.id,
+      memo: `Bought "${offer.itemName}" (negotiated ${price} CC)`,
+    });
+
+    offer.status = "COMPLETED";
+    offer.counterpartyEmail = buyer.email;
+    offer.counterpartyName = buyer.name;
+    offer.closedAt = iso;
+
+    n.status = "ACCEPTED";
+    n.updatedAt = iso;
+    n.closedAt = iso;
+    n.txId = tx.id;
+    n.messages.push({ by: role, priceCC: price, note: trimmedNote || "Accepted", at: iso });
+
+    // Everyone else haggling on this now-sold item is out.
+    closeOpenNegotiations(draft, offer.id, "CANCELLED", n.id);
+
+    const balance = me.email === buyer.email ? buyer.balance : seller.balance;
+    return { negotiation: structuredClone(n), balance, settled: true };
   });
 }
 
@@ -1182,6 +1426,8 @@ export async function expireStaleOffers(now = Date.now()): Promise<number> {
         continue;
       }
       removed++;
+      // End any live haggling on this expiring listing.
+      closeOpenNegotiations(draft, offer.id, "CANCELLED");
       // Refund a stale BUY offer's escrow before it's dropped.
       if (offer.type === "BUY" && offer.escrowAmount > 0) {
         const creator = draft.members.find((m) => m.email === offer.creatorEmail);
@@ -1200,6 +1446,11 @@ export async function expireStaleOffers(now = Date.now()): Promise<number> {
       }
     }
     draft.offers = keep;
+    // Bound growth: drop closed negotiations older than the same TTL. OPEN ones
+    // and recently-closed threads (still worth showing) are kept.
+    draft.negotiations = draft.negotiations.filter(
+      (n) => n.status === "OPEN" || Date.parse(n.updatedAt) >= cutoff,
+    );
     return removed;
   });
 }

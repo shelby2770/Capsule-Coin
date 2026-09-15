@@ -11,16 +11,22 @@ import { useAuth } from "@/components/AuthProvider";
 import type {
   LeaderboardResponse,
   ValueResponse,
+  DcRateResponse,
   TransfersResponse,
   TransactionPublic,
+  OfferFeedItem,
+  NegotiationPublic,
 } from "@/lib/types";
 import { LEDGER_EVENT } from "@/lib/ledgerEvents";
 
 type BootstrapValue = {
   leaderboard: LeaderboardResponse | null;
   value: ValueResponse | null;
+  dcRate: DcRateResponse | null;
   transfers: TransfersResponse | null;
   transactions: TransactionPublic[] | null;
+  recentOffers: OfferFeedItem[] | null;
+  negotiations: NegotiationPublic[] | null;
   loading: boolean;
   error: string | null;
   refresh: () => Promise<void>;
@@ -29,8 +35,11 @@ type BootstrapValue = {
 const EMPTY = {
   leaderboard: null,
   value: null,
+  dcRate: null,
   transfers: null,
   transactions: null,
+  recentOffers: null,
+  negotiations: null,
 };
 
 const Ctx = createContext<BootstrapValue | null>(null);
@@ -56,8 +65,11 @@ export function BootstrapProvider({ children }: { children: React.ReactNode }) {
       setData({
         leaderboard: d.leaderboard ?? null,
         value: d.value ?? null,
+        dcRate: d.dcRate ?? null,
         transfers: d.transfers ?? null,
         transactions: d.transactions ?? null,
+        recentOffers: d.recentOffers ?? null,
+        negotiations: d.negotiations ?? null,
       });
       setError(null);
     } catch (e) {
@@ -72,7 +84,25 @@ export function BootstrapProvider({ children }: { children: React.ReactNode }) {
     void refresh();
     const onChange = () => void refresh();
     window.addEventListener(LEDGER_EVENT, onChange);
-    return () => window.removeEventListener(LEDGER_EVENT, onChange);
+
+    // Keep the shared payload fresh so broadcast items — new marketplace offers
+    // and incoming transfer requests posted by OTHER members — reach everyone
+    // without a manual reload. Refresh when the tab regains focus/visibility,
+    // plus a gentle interval while the tab is actually visible (skipped when
+    // hidden, so backgrounded tabs don't poll).
+    const refreshIfVisible = () => {
+      if (document.visibilityState === "visible") void refresh();
+    };
+    window.addEventListener("focus", refreshIfVisible);
+    document.addEventListener("visibilitychange", refreshIfVisible);
+    const poll = setInterval(refreshIfVisible, 120_000);
+
+    return () => {
+      window.removeEventListener(LEDGER_EVENT, onChange);
+      window.removeEventListener("focus", refreshIfVisible);
+      document.removeEventListener("visibilitychange", refreshIfVisible);
+      clearInterval(poll);
+    };
   }, [status, refresh]);
 
   return (

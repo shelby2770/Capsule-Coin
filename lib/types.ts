@@ -63,6 +63,40 @@ export type OfferPublic = {
   closedAt: string | null;
 };
 
+// ── Marketplace negotiation (haggle on a SELL offer) ────────────────────────
+export type NegotiationParty = "BUYER" | "SELLER";
+export type NegotiationStatusPublic =
+  | "OPEN"
+  | "ACCEPTED"
+  | "DECLINED"
+  | "WITHDRAWN"
+  | "CANCELLED";
+
+export type NegotiationMessagePublic = {
+  by: NegotiationParty;
+  priceCC: number;
+  note: string;
+  at: string;
+};
+
+export type NegotiationPublic = {
+  id: string;
+  offerId: string;
+  itemName: string;
+  sellerName: string;
+  buyerName: string;
+  status: NegotiationStatusPublic;
+  currentPriceCC: number;
+  listPriceCC: number | null; // the offer's current list price, if it's still open
+  turn: NegotiationParty; // who should respond next
+  role: "buyer" | "seller"; // the viewer's side of this negotiation
+  yourTurn: boolean; // true when it's the viewer's move
+  messages: NegotiationMessagePublic[];
+  createdAt: string;
+  updatedAt: string;
+  closedAt: string | null;
+};
+
 export type TransferStatus =
   | "PENDING"
   | "APPROVED"
@@ -204,4 +238,28 @@ export type ValueResponse = {
   spread: number;
   balanceFloor: number;
   series: ValuePoint[];
+};
+
+/** DC -> CC market-rate report (spot rate for 1 DC + the supply scarcity band). */
+export type DcRateResponse = {
+  ccPerDc: number; // CC you get per DC at the reference amount (the spot rate)
+  refAmount: number; // reference conversion size the spot rate is quoted at (1 DC)
+  multiplier: number; // supply scarcity multiplier m(S) — the market-driven part
+  supply: number; // total DC in circulation
+  change24h: number | null;
+  clampMin: number; // floor of the scarcity multiplier
+  clampMax: number; // ceiling of the scarcity multiplier
+  series: ValuePoint[]; // per-DC rate over the last 24h
+};
+
+/** A marketplace offer as broadcast in the notifications feed (all members). */
+export type OfferFeedItem = {
+  id: string;
+  type: OfferType;
+  itemName: string;
+  category: string;
+  priceCC: number;
+  creatorName: string;
+  creatorEmail: string;
+  createdAt: string;
 };
