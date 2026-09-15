@@ -85,7 +85,6 @@ export const config = {
     clampMin: num(process.env.DC_CLAMP_MIN, 0.5),
     clampMax: num(process.env.DC_CLAMP_MAX, 1.5),
     minConvert: num(process.env.DC_MIN_CONVERT, 1), // smallest DC->CC conversion
-    dailyCapDc: num(process.env.DC_DAILY_CAP, 500), // max DC a member converts per UTC day
     // Buy DC with real money (admin-recorded). 0 = rate not set yet. Proceeds are
     // tallied into the Capsule Fruit Fund, maintained by the Fruit Minister (Jakir).
     bdtPerDc: num(process.env.DC_BDT_PER_DC, 0),

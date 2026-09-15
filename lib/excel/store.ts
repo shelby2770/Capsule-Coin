@@ -2195,23 +2195,6 @@ function totalDcSupply(s: LedgerState): number {
   return round2(s.members.reduce((acc, m) => acc + Math.max(0, m.dcBalance), 0));
 }
 
-/** DC a member has already converted to CC during the given UTC day. */
-function dcConvertedToday(s: LedgerState, email: string, nowMs: number): number {
-  const today = dayKey(nowMs);
-  let sum = 0;
-  for (const t of s.transactions) {
-    if (
-      t.type === "CONVERT" &&
-      t.currency === "DC" &&
-      t.fromEmail === email &&
-      dayKey(Date.parse(t.createdAt)) === today
-    ) {
-      sum += t.amountCC;
-    }
-  }
-  return round2(sum);
-}
-
 /**
  * Pure DC->CC quote. CC = x * b(x) * m(S):
  *   b(x) = min(bulkRateMax, bulkFloor + bulkLogGain*ln(x) + bulkTailGain*x^bulkTailPow)
@@ -2252,24 +2235,17 @@ export type DcConvertStatus = {
   ccBalance: number;
   supply: number;
   minConvert: number;
-  dailyCapDc: number;
-  convertedToday: number;
-  remainingToday: number;
 };
 
 export async function dcConvertStatus(email: string): Promise<DcConvertStatus> {
   const s = await ensureLoaded();
   const lower = email.trim().toLowerCase();
   const me = s.members.find((m) => m.email === lower);
-  const convertedToday = dcConvertedToday(s, lower, Date.now());
   return {
     dcBalance: round2(me?.dcBalance ?? 0),
     ccBalance: round2(me?.balance ?? 0),
     supply: totalDcSupply(s),
     minConvert: config.dc.minConvert,
-    dailyCapDc: config.dc.dailyCapDc,
-    convertedToday,
-    remainingToday: round2(Math.max(0, config.dc.dailyCapDc - convertedToday)),
   };
 }
 
@@ -2304,13 +2280,6 @@ export async function convertDcToCc(
       throw new LedgerError("INSUFFICIENT_DC", `You only have ${round2(me.dcBalance)} DC.`);
     }
     const now = Date.now();
-    const already = dcConvertedToday(draft, me.email, now);
-    if (already + x > config.dc.dailyCapDc) {
-      throw new LedgerError(
-        "DAILY_CAP",
-        `Daily conversion cap is ${config.dc.dailyCapDc} DC — you've already converted ${already} today.`,
-      );
-    }
     const supply = totalDcSupply(draft);
     const { cc, perDc, multiplier } = quoteDcToCc(x, supply);
     if (cc <= 0) {

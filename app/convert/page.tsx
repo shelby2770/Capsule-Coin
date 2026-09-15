@@ -25,9 +25,6 @@ type Status = {
   ccBalance: number;
   supply: number;
   minConvert: number;
-  dailyCapDc: number;
-  convertedToday: number;
-  remainingToday: number;
   quote: Quote;
 };
 
@@ -80,15 +77,10 @@ function Convert() {
 
   const dc = status?.dcBalance ?? 0;
   const minConvert = status?.minConvert ?? 1;
-  const remainingToday = status?.remainingToday ?? 0;
   const x = Number(amount);
-  const capReached = status ? remainingToday <= 0 : false;
-  const overCap = Number.isFinite(x) && x > remainingToday;
-  const valid =
-    Number.isFinite(x) && x >= minConvert && x <= dc && x <= remainingToday;
+  const valid = Number.isFinite(x) && x >= minConvert && x <= dc;
 
-  const setPct = (p: number) =>
-    setAmount(String(round2(Math.min(dc, remainingToday) * p)));
+  const setPct = (p: number) => setAmount(String(round2(dc * p)));
 
   const convert = async () => {
     if (!valid) return;
@@ -136,11 +128,10 @@ function Convert() {
           </div>
         </div>
 
-        <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3">
           <Stat label="Your DC" value={`${formatDC(dc)}`} ember />
           <Stat label="Your CC" value={formatCC(status?.ccBalance ?? 0)} />
           <Stat label="DC in market" value={formatDC(status?.supply ?? 0)} />
-          <Stat label="Left today" value={formatDC(remainingToday)} />
         </div>
       </div>
 
@@ -153,7 +144,7 @@ function Convert() {
             placeholder={`min ${minConvert}`}
             value={amount}
             onChange={(e) => setAmount(e.target.value.replace(/[^0-9.]/g, ""))}
-            disabled={busy || capReached}
+            disabled={busy}
           />
           <div className="flex gap-1">
             {[0.25, 0.5, 1].map((p) => (
@@ -161,7 +152,7 @@ function Convert() {
                 key={p}
                 className="chip dc-ring hover:text-white"
                 onClick={() => setPct(p)}
-                disabled={busy || capReached || dc <= 0}
+                disabled={busy || dc <= 0}
               >
                 {p === 1 ? "Max" : `${p * 100}%`}
               </button>
@@ -191,17 +182,6 @@ function Convert() {
             </div>
           )}
         </div>
-
-        {overCap && !capReached && (
-          <p className="mt-3 text-xs text-ember-300">
-            Over today&apos;s remaining allowance ({formatDC(remainingToday)} DC).
-          </p>
-        )}
-        {capReached && (
-          <p className="mt-3 text-xs text-ember-300">
-            You&apos;ve hit today&apos;s conversion cap ({formatDC(status?.dailyCapDc ?? 0)} DC). Try again tomorrow.
-          </p>
-        )}
 
         <button
           className="btn-ember dc-ring mt-4 w-full"
