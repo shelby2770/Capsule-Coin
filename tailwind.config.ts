@@ -36,6 +36,14 @@ const config: Config = {
           500: "#2DD4BF",
           600: "#14B8A6",
         },
+        // True green — the Wordle "right spot" tile. Deliberately distinct from
+        // the teal secondary so a correct letter reads unmistakably as green.
+        grass: {
+          300: "#86E29A",
+          400: "#57C46A",
+          500: "#3FA35B",
+          600: "#2F8547",
+        },
         // Dark Capsule Coin (DC): ember / fire on obsidian.
         ember: {
           300: "#FDBA74",

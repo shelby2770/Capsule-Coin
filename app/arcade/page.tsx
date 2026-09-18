@@ -57,7 +57,6 @@ function Arcade() {
 
   const freeLeft = status?.freeRemaining ?? 0;
   const reserve = status?.reserveRemaining ?? 0;
-  const fees = status?.tierFees ?? [20, 50, 100];
   const reservePct = status
     ? Math.max(0, Math.min(100, (reserve / status.supplyCap) * 100))
     : 0;
@@ -74,7 +73,7 @@ function Arcade() {
       </div>
 
       {/* shared free-play banner */}
-      <div className="dc-card flex flex-wrap items-center justify-between gap-3 p-4">
+      <div className="dc-card flex flex-wrap items-center gap-3 p-4">
         <div className="text-sm">
           {!status ? (
             <span className="text-mute">Loading…</span>
@@ -88,10 +87,6 @@ function Arcade() {
               <span className="text-white">{fmtCountdown(status.resetsAtMs - now)}</span>. Paid tiers are always open.
             </span>
           )}
-        </div>
-        <div className="flex items-center gap-2 text-sm text-mute">
-          <Vault size={15} className="text-teal-400" /> Reserve
-          <span className="font-semibold text-white">{status ? formatDC(reserve) : "—"} DC</span>
         </div>
       </div>
 
@@ -110,7 +105,7 @@ function Arcade() {
           blurb="Draw tokens against the secret vault — every collision forges DC."
           freeLeft={freeLeft}
           resume={false}
-          meta={`Pay tiers ${fees.join(" / ")} CC`}
+          meta=""
         />
         <GameCard
           href="/arcade/word"
@@ -119,11 +114,7 @@ function Arcade() {
           blurb="Wordle-style. Solve fast and in few tries for the biggest DC."
           freeLeft={freeLeft}
           resume={status?.resumable?.kind === "word"}
-          meta={
-            status
-              ? `${status.wordsRemaining.toLocaleString()} words left · tiers ${fees.join(" / ")} CC`
-              : "…"
-          }
+          meta=""
         />
         <GameCard
           href="/arcade/type"
@@ -132,7 +123,7 @@ function Arcade() {
           blurb="Type a passage cleanly and fast. Faster = more DC."
           freeLeft={freeLeft}
           resume={status?.resumable?.kind === "type"}
-          meta={`Pay tiers ${fees.join(" / ")} CC`}
+          meta=""
         />
       </div>
 
@@ -201,9 +192,13 @@ function GameCard({
       <h2 className="mt-3 font-display text-lg font-semibold text-white">{title}</h2>
       <p className="mt-1 flex-1 text-sm text-mute">{blurb}</p>
       <div className="mt-3 flex items-center justify-between text-[11px] text-mute">
-        <span className="inline-flex items-center gap-1">
-          <DarkCoinLogo size={12} /> {meta}
-        </span>
+        {meta ? (
+          <span className="inline-flex items-center gap-1">
+            <DarkCoinLogo size={12} /> {meta}
+          </span>
+        ) : (
+          <span />
+        )}
         <ArrowRight size={15} className="text-ember-400 transition group-hover:translate-x-0.5" />
       </div>
     </Link>

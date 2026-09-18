@@ -42,6 +42,8 @@ export type GameSession = {
   maxAttempts?: number;
   // type race
   para?: TypeItem;
+  bestWpm?: number; // best WPM across attempts (reward tracks the best run)
+  reAttemptsLeft?: number; // free retries remaining on this paid entry
 };
 
 const sessionRef = (id: string) => gameCollection(GAME_SESSIONS).doc(id);
@@ -91,4 +93,34 @@ export async function activeSessionFor(
   const rows = q.docs.map((d) => d.data() as GameSession);
   rows.sort((a, b) => b.createdAt - a.createdAt);
   return rows[0];
+}
+
+/** Start (ms epoch) of the current UTC day — the daily reset boundary. */
+export function startOfUtcDay(now = Date.now()): number {
+  const d = new Date(now);
+  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+}
+
+/**
+ * Has the member already entered this game + tier today (UTC)? A session is only
+ * persisted once its entry is charged (start deletes it if the charge fails), so
+ * counting sessions created today = plays made today. Used to enforce the "one
+ * play per paid tier per day, per game" limit. Re-attempts reuse the same session
+ * (no new doc), so they don't count as another play. Uses only equality filters
+ * (no composite index) and filters the day boundary in memory.
+ */
+export async function playedTierToday(
+  email: string,
+  kind: GameKind,
+  tier: number,
+  now = Date.now(),
+): Promise<boolean> {
+  const q = await gameCollection(GAME_SESSIONS)
+    .where("email", "==", email.trim().toLowerCase())
+    .where("kind", "==", kind)
+    .where("tier", "==", tier)
+    .get();
+  if (q.empty) return false;
+  const dayStart = startOfUtcDay(now);
+  return q.docs.some((d) => Number((d.data() as GameSession).createdAt) >= dayStart);
 }

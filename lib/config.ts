@@ -127,15 +127,27 @@ export const config = {
       ] as ReadonlyArray<number>,
       // Word lengths drawn from the pool (Wordle-style clues on 5–6 letters).
       lengths: [5, 6] as ReadonlyArray<number>,
-      maxAttempts: num(process.env.GAMES_WORD_MAX_ATTEMPTS, 100),
+      maxAttempts: num(process.env.GAMES_WORD_MAX_ATTEMPTS, 7),
       // Reward per solved word = baseReward / 2^(attempts−1), then × a time factor.
       // 1 try = baseReward, 2 = half, 3 = quarter …
       baseReward: num(process.env.GAMES_WORD_BASE_REWARD, 100),
       // "Normal" seconds per attempt. If the solve took longer than
       // secPerAttempt × attempts, the reward scales by expected/elapsed, floored
       // at timeFloor (so unusually slow play earns less).
-      secPerAttempt: num(process.env.GAMES_WORD_SEC_PER_ATTEMPT, 10),
+      secPerAttempt: num(process.env.GAMES_WORD_SEC_PER_ATTEMPT, 20),
       timeFloor: num(process.env.GAMES_WORD_TIME_FLOOR, 0.1),
+      // Per-tier reward multiplier [free, t1, t2, t3] applied on top of the
+      // base (attempts × time) reward — paid tiers pay proportionally more.
+      tierRewardMult: [
+        num(process.env.GAMES_WORD_MULT_FREE, 1),
+        num(process.env.GAMES_WORD_MULT_T1, 1),
+        num(process.env.GAMES_WORD_MULT_T2, 1),
+        num(process.env.GAMES_WORD_MULT_T3, 1),
+      ] as ReadonlyArray<number>,
+      // A word session self-ends this many seconds after it starts. The on-screen
+      // clock keeps running across leave/return; when it hits the cap the session
+      // closes and DC earned so far is finalized.
+      sessionTtlSec: num(process.env.GAMES_WORD_SESSION_TTL_SEC, 600),
     },
     type: {
       // Reward by net WPM = baseReward at baseWpm, halving each stepWpm below it,
@@ -152,6 +164,16 @@ export const config = {
         num(process.env.GAMES_TYPE_DIFF_T1, 4),
         num(process.env.GAMES_TYPE_DIFF_T2, 3),
         num(process.env.GAMES_TYPE_DIFF_T3, 2),
+      ] as ReadonlyArray<number>,
+      // Free re-attempts per paid entry [free, t1, t2, t3]: after finishing a
+      // race you may retry (a fresh paragraph, no extra CC) this many times to
+      // beat your best. Only an improved best mints more DC (top-up), so retries
+      // can raise your reward but never farm it. Free tier gets none.
+      reAttempts: [
+        num(process.env.GAMES_TYPE_REATTEMPTS_FREE, 0),
+        num(process.env.GAMES_TYPE_REATTEMPTS_T1, 1),
+        num(process.env.GAMES_TYPE_REATTEMPTS_T2, 2),
+        num(process.env.GAMES_TYPE_REATTEMPTS_T3, 3),
       ] as ReadonlyArray<number>,
     },
   },

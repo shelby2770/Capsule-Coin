@@ -2,12 +2,12 @@
 
 import { useState } from "react";
 import { ArrowLeft, ArrowRight, Loader2, Check } from "lucide-react";
-import { formatCC } from "@/lib/format";
+import { Portal } from "@/components/Portal";
 
 export type TierOption = {
   tier: number; // 0 = free, 1..3 = paid
   label: string; // e.g. "Free", "Tier 1"
-  cost: number; // CC fee (0 for free)
+  cost: number; // CC fee (0 for free) — not surfaced in the modal, kept for callers
   detail: string; // e.g. "3 words"
   disabled?: boolean;
   note?: string; // why it's disabled, or an extra hint
@@ -48,8 +48,9 @@ export function GameIntroModal({
   const [tier, setTier] = useState(initial);
 
   return (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-ink-900/80 p-4 backdrop-blur-sm">
-      <div className="dc-card animate-cap-slam relative w-full max-w-lg overflow-hidden p-7">
+    <Portal>
+    <div className="fixed inset-0 z-[200] flex items-center justify-center overflow-y-auto bg-ink-900/80 p-4 backdrop-blur-sm">
+      <div className="dc-card animate-cap-slam relative my-auto max-h-[calc(100vh-2rem)] w-full max-w-lg overflow-y-auto overflow-x-hidden p-7">
         <div
           aria-hidden
           className="pointer-events-none absolute -right-16 -top-16 h-48 w-48 rounded-full bg-ember-500/20 blur-3xl"
@@ -92,9 +93,7 @@ export function GameIntroModal({
                     >
                       <div className="flex items-center justify-between">
                         <span className="text-sm font-semibold text-white">{t.label}</span>
-                        <span className="text-xs text-ember-300">
-                          {t.cost > 0 ? `${formatCC(t.cost)} CC` : "Free"}
-                        </span>
+                        {t.tier === 0 && <span className="text-xs text-ember-300">Free</span>}
                       </div>
                       <div className="mt-0.5 text-xs text-mute">{t.detail}</div>
                       {t.note && <div className="mt-1 text-[11px] text-mute/80">{t.note}</div>}
@@ -127,5 +126,6 @@ export function GameIntroModal({
         </div>
       </div>
     </div>
+    </Portal>
   );
 }

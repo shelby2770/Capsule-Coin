@@ -217,6 +217,15 @@
 }
 .animate-cap-slam { animation: cap-slam 0.6s cubic-bezier(0.22, 1, 0.36, 1) both; }
 
+/* Word game: the solved row pops up green before the DC is tallied */
+@keyframes win-pop {
+  0% { transform: translateY(0) scale(1); }
+  35% { transform: translateY(-10px) scale(1.08); }
+  70% { transform: translateY(0) scale(0.97); }
+  100% { transform: translateY(0) scale(1); }
+}
+.animate-win-pop { animation: win-pop 0.55s cubic-bezier(0.22, 1, 0.36, 1) both; }
+
 @keyframes toast-in {
   from { transform: translateY(-16px); opacity: 0; }
   to { transform: translateY(0); opacity: 1; }
@@ -292,7 +301,7 @@
   .animate-mine-pop, .animate-float, .animate-spin-slow, .animate-glow-pulse,
   .animate-token-scroll, .animate-token-scroll-fast, .animate-scan-sweep,
   .animate-match-burst, .animate-cap-slam, .animate-toast-in, .animate-toast-in-up,
-  .animate-rise, .stagger > * {
+  .animate-win-pop, .animate-rise, .stagger > * {
     animation: none !important;
   }
   .card-hover:hover { transform: none; }

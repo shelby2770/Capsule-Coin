@@ -4,7 +4,7 @@ import { config } from "@/lib/config";
 import { round2 } from "@/lib/format";
 import { LedgerError, arcadeGate, spendGamePlay, awardGameDc } from "@/lib/excel/store";
 import { assertValidTier } from "@/lib/games/common";
-import { assertCanStart } from "@/lib/games/word";
+import { assertCanStart, assertTierNotUsedToday } from "@/lib/games/word";
 import { pickParagraph } from "@/lib/games/pools";
 import {
   createSession,
@@ -30,9 +30,11 @@ export async function startType(
   assertValidTier(tier);
   const gate = await arcadeGate(actor.email);
   assertCanStart(gate, tier);
+  await assertTierNotUsedToday(actor.email, "type", tier);
 
   const difficulty = config.games.type.tierDifficulty[tier] ?? 5;
   const para = await pickParagraph(difficulty);
+  const reAttemptsLeft = config.games.type.reAttempts[tier] ?? 0;
 
   // Create with the clock stopped; charge; THEN start the clock, so the CC-burn
   // round-trip isn't counted against the racer's time.
@@ -41,6 +43,8 @@ export async function startType(
     kind: "type",
     tier,
     para: { id: para.id, text: para.text, difficulty: para.difficulty, startedAt: 0 },
+    bestWpm: 0,
+    reAttemptsLeft,
   });
   try {
     await spendGamePlay(actor, tier, "type racing");
@@ -58,6 +62,50 @@ export async function startType(
     text: para.text,
     difficulty: para.difficulty,
     startedAtMs: startedAt,
+    reAttemptsLeft,
+  };
+}
+
+/**
+ * Spend one free re-attempt on a paid entry: serve a FRESH paragraph (same
+ * difficulty), no CC charge, and restart the clock. Only allowed once the current
+ * race is finished and while retries remain. The reward top-up (best run only) is
+ * settled on the next submit, so a re-attempt can raise your DC but never farm it.
+ */
+export async function reAttemptType(
+  actor: { email: string; name: string },
+  sessionId: string,
+): Promise<TypeStart> {
+  const session = await getSession(sessionId);
+  if (!session) throw new LedgerError("SESSION_NOT_FOUND", "That game session doesn't exist.");
+  if (session.email !== actor.email.trim().toLowerCase()) {
+    throw new LedgerError("NOT_YOUR_SESSION", "That isn't your game.");
+  }
+  if (session.kind !== "type" || !session.para) {
+    throw new LedgerError("WRONG_TEXT", "Wrong game type.");
+  }
+  if (session.status === "active") {
+    throw new LedgerError("RACE_IN_PROGRESS", "Finish your current race before re-attempting.");
+  }
+  if ((session.reAttemptsLeft ?? 0) <= 0) {
+    throw new LedgerError("NO_REATTEMPTS", "No re-attempts left on this entry.");
+  }
+
+  const difficulty = config.games.type.tierDifficulty[session.tier] ?? 5;
+  const para = await pickParagraph(difficulty);
+  const startedAt = Date.now();
+  session.reAttemptsLeft = (session.reAttemptsLeft ?? 0) - 1;
+  session.status = "active";
+  session.para = { id: para.id, text: para.text, difficulty: para.difficulty, startedAt };
+  await saveSession(session);
+
+  return {
+    sessionId: session.id,
+    tier: session.tier,
+    text: para.text,
+    difficulty: para.difficulty,
+    startedAtMs: startedAt,
+    reAttemptsLeft: session.reAttemptsLeft,
   };
 }
 
@@ -96,19 +144,27 @@ export async function submitType(
 
   let wpm = target.length / 5 / (elapsedSec / 60);
   wpm = Math.min(wpm, config.games.type.maxWpm);
-  const reward = typeReward(wpm);
+
+  // Reward tracks the BEST run on this entry. Re-attempts only ever mint the
+  // improvement over what's already been paid (deserved − alreadyMinted), so a
+  // retry can raise your DC toward your best but can never farm extra.
+  const newBest = Math.max(session.bestWpm ?? 0, wpm);
+  const alreadyMinted = round2(session.totalReward ?? 0);
+  const deserved = typeReward(newBest);
+  const topUp = Math.max(0, round2(deserved - alreadyMinted));
 
   let minted = 0;
-  if (reward > 0) {
+  if (topUp > 0) {
     const award = await awardGameDc(
       actor,
-      reward,
-      `Won ${reward} DC — type race ${Math.round(wpm)} WPM`,
+      topUp,
+      `Won ${topUp} DC — type race ${Math.round(wpm)} WPM`,
     );
     minted = award.minted;
   }
+  session.bestWpm = newBest;
+  session.totalReward = round2(alreadyMinted + minted);
   session.status = "done";
-  session.totalReward = minted;
   await saveSession(session);
 
   const accuracy =
@@ -121,6 +177,9 @@ export async function submitType(
     accuracy,
     elapsedSec: round2(elapsedSec),
     minted,
-    totalReward: minted,
+    totalReward: session.totalReward,
+    bestWpm: round2(newBest),
+    improved: minted > 0,
+    reAttemptsLeft: session.reAttemptsLeft ?? 0,
   };
 }

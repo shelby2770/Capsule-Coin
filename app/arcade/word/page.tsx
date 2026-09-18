@@ -23,7 +23,9 @@ import {
   Trophy,
   ArrowRight,
   Timer,
+  Hash,
 } from "lucide-react";
+import { Portal } from "@/components/Portal";
 
 type Attempt = { guess: string; feedback: GameLetterState[] };
 type Cur = {
@@ -36,15 +38,22 @@ type Cur = {
   maxAttempts: number;
   attempts: Attempt[];
   totalReward: number;
+  ttlMs: number; // session lifespan (the clock counts up to this, then ends)
 };
 
 const KEY_ROWS = ["qwertyuiop", "asdfghjkl", "zxcvbnm"];
 const RANK: Record<GameLetterState, number> = { absent: 0, present: 1, correct: 2 };
 
+/** m:ss for the session clock. */
+function fmtClock(ms: number): string {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+}
+
 function tileClass(s: GameLetterState | "empty" | "active"): string {
   switch (s) {
     case "correct":
-      return "bg-teal-500 border-teal-500 text-white";
+      return "bg-grass-500 border-grass-500 text-white";
     case "present":
       return "bg-gold-500 border-gold-500 text-ink-900";
     case "absent":
@@ -79,12 +88,18 @@ function WordGame() {
   const [finished, setFinished] = useState<{ words: number; total: number; dc: number } | null>(
     null,
   );
-  const [elapsed, setElapsed] = useState(0);
-  const wordStartRef = useRef<number>(Date.now());
+  // One server-anchored stopwatch for the whole session (base = server-measured
+  // elapsed at fetch; at = client clock then; live value = base + (now − at)). It
+  // runs the entire game, survives leave/return, and closes the session at the cap.
+  const [sessionMs, setSessionMs] = useState(0);
+  const sessionAnchorRef = useRef<{ base: number; at: number }>({ base: 0, at: Date.now() });
+  const finalizingRef = useRef(false);
 
   const fromBoard = useCallback((b: WordBoard): Cur => {
-    wordStartRef.current = Date.now();
-    setElapsed(0);
+    const now = Date.now();
+    sessionAnchorRef.current = { base: b.elapsedMs, at: now };
+    finalizingRef.current = false;
+    setSessionMs(b.elapsedMs);
     return {
       sessionId: b.sessionId,
       tier: b.tier,
@@ -95,6 +110,7 @@ function WordGame() {
       maxAttempts: b.maxAttempts,
       attempts: b.attempts,
       totalReward: b.totalReward,
+      ttlMs: b.ttlMs,
     };
   }, []);
 
@@ -131,12 +147,45 @@ function WordGame() {
     };
   }, [authedFetch, fromBoard]);
 
-  // Cosmetic per-word stopwatch.
+  // The session clock hit its cap while playing — pull the finalized board and
+  // show the results (DC earned so far is already banked per solved word).
+  const finalizeTimeout = useCallback(async () => {
+    if (!cur) return;
+    try {
+      const r = await authedFetch("/api/arcade/word", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "state", sessionId: cur.sessionId }),
+      });
+      if (!r.ok) return;
+      const b = (await r.json()) as WordBoard;
+      if (b.done) {
+        void refresh();
+        emitLedgerChange();
+        setFinished({ words: b.wordsSolved, total: b.wordsTotal, dc: b.totalReward });
+      }
+    } catch {
+      /* the ticker will retry on the next tick */
+    }
+  }, [authedFetch, cur, refresh]);
+
+  // Session stopwatch — runs the whole game, survives leave/return, and closes
+  // the session once it reaches the cap.
   useEffect(() => {
     if (!cur || finished) return;
-    const id = setInterval(() => setElapsed(Math.floor((Date.now() - wordStartRef.current) / 1000)), 1000);
+    const tick = () => {
+      const now = Date.now();
+      const sMs = sessionAnchorRef.current.base + (now - sessionAnchorRef.current.at);
+      setSessionMs(sMs);
+      if (sMs >= cur.ttlMs && !finalizingRef.current) {
+        finalizingRef.current = true;
+        void finalizeTimeout();
+      }
+    };
+    tick();
+    const id = setInterval(tick, 500);
     return () => clearInterval(id);
-  }, [cur, finished]);
+  }, [cur, finished, finalizeTimeout]);
 
   const keyStates = useMemo(() => {
     const m: Record<string, GameLetterState> = {};
@@ -217,10 +266,13 @@ function WordGame() {
       }
       const res = d as WordGuessResult;
       setTyped("");
-      // Append this attempt to the current word's board.
+      // Append this attempt — a solve paints the whole row green right away.
       setCur((prev) =>
         prev ? { ...prev, attempts: [...prev.attempts, { guess: guess.toUpperCase(), feedback: res.feedback }], totalReward: res.totalReward } : prev,
       );
+
+      // Let the all-green row land and celebrate before tallying DC / moving on.
+      if (res.solved) await new Promise((r) => setTimeout(r, 1050));
 
       if (res.solved) toast.success(`Solved! +${formatDC(res.minted)} DC 🔥`);
       else if (res.revealed) toast(`Out of tries — the word was ${res.revealed}.`);
@@ -231,15 +283,14 @@ function WordGame() {
         if (res.done) {
           setFinished({ words: res.wordsSolved, total: res.wordsTotal, dc: res.totalReward });
         } else if (res.next) {
-          // Advance to the next word.
+          // Advance to the next word — the session clock keeps running.
           setBanner(
             res.solved
               ? `Solved! +${formatDC(res.minted)} DC — next word (${res.wordsSolved + 1}/${res.wordsTotal})`
               : `Next word (${res.next.wordIndex + 1}/${res.wordsTotal})`,
           );
           setTimeout(() => setBanner(null), 2600);
-          wordStartRef.current = Date.now();
-          setElapsed(0);
+          // New word served — the single session stopwatch keeps running.
           setCur((prev) =>
             prev
               ? {
@@ -310,11 +361,11 @@ function WordGame() {
         <GameIntroModal
           title="Guess the Word"
           icon={<Puzzle size={22} />}
-          intro="Guess the hidden 5–6 letter word. After each guess, tiles turn green (right letter, right spot), yellow (right letter, wrong spot), or grey (not in the word)."
+          intro="Guess the hidden word. After each guess, tiles turn green (right letter, right spot), yellow (right letter, wrong spot), or grey (not in the word)."
           rules={[
-            "Solve fast and in few tries — reward halves each attempt (100, 50, 25, 12.5 …) and drops if you take too long.",
-            "Up to 100 attempts per word. Paid tiers give more words, shown one at a time.",
-            "Wins mint DC. Backing out here costs nothing.",
+            "Solve it in as few guesses as you can, and quickly — sharper, faster solves are worth more.",
+            "Up to 7 guesses per word. Paid tiers give more words, shown one at a time.",
+            "One 10-minute session — the clock keeps running if you step away. Backing out here costs nothing.",
           ]}
           tiers={tiers}
           busy={starting}
@@ -333,9 +384,15 @@ function WordGame() {
               <span className="text-mute">/{cur.wordsTotal}</span>
               {cur.tier > 0 && <span className="ml-2 text-ember-300">Tier {cur.tier}</span>}
             </div>
-            <div className="flex items-center gap-3">
-              <span className="inline-flex items-center gap-1 text-mute">
-                <Timer size={14} /> {elapsed}s
+            <div className="flex items-center gap-2.5">
+              <span
+                className={`inline-flex items-center gap-1 tabular-nums ${
+                  cur.ttlMs - sessionMs <= 60_000 ? "text-ember-300" : "text-mute"
+                }`}
+                title="Session time — one 10-minute run; keeps going if you leave and return, and ends at 10:00"
+              >
+                <Timer size={14} /> {fmtClock(sessionMs)}
+                <span className="text-mute/50">/ {fmtClock(cur.ttlMs)}</span>
               </span>
               <span className="inline-flex items-center gap-1 font-semibold text-ember-300">
                 <DarkCoinLogo size={14} /> {formatDC(cur.totalReward)}
@@ -351,12 +408,25 @@ function WordGame() {
 
           {/* board */}
           <div className="dc-card p-4">
-            <div className="mb-2 text-center text-xs text-mute">
-              Attempt {cur.attempts.length + (finished ? 0 : 1)} · {cur.maxAttempts} max
+            <div className="mb-3 flex items-center justify-center">
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-edge bg-ink-800/60 px-3 py-1 text-xs">
+                <Hash size={12} className="text-ember-400" />
+                <span className="text-mute">Attempt</span>
+                <span className="font-semibold text-white tabular-nums">
+                  {cur.attempts.length + (finished ? 0 : 1)}
+                </span>
+                <span className="text-mute">of {cur.maxAttempts}</span>
+              </span>
             </div>
             <div className="flex max-h-[46vh] flex-col gap-1.5 overflow-y-auto pr-1">
               {cur.attempts.map((a, ri) => (
-                <Row key={ri} letters={a.guess.split("")} states={a.feedback} len={cur.wordLength} />
+                <Row
+                  key={ri}
+                  letters={a.guess.split("")}
+                  states={a.feedback}
+                  len={cur.wordLength}
+                  win={ri === cur.attempts.length - 1 && a.feedback.every((f) => f === "correct")}
+                />
               ))}
               {!finished && (
                 <Row
@@ -397,6 +467,7 @@ function WordGame() {
       )}
 
       {finished && (
+        <Portal>
         <div className="fixed inset-0 z-[200] flex items-center justify-center bg-ink-900/80 p-4 backdrop-blur-sm">
           <div className="dc-card animate-cap-slam w-full max-w-sm p-7 text-center">
             <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-ember-500/15 text-ember-300">
@@ -430,6 +501,7 @@ function WordGame() {
             </div>
           </div>
         </div>
+        </Portal>
       )}
     </div>
   );
@@ -440,11 +512,13 @@ function Row({
   states,
   len,
   active,
+  win,
 }: {
   letters: string[];
   states: GameLetterState[] | null;
   len: number;
   active?: boolean;
+  win?: boolean;
 }) {
   const cells = Array.from({ length: len }, (_, i) => ({
     ch: letters[i] ?? "",
@@ -455,9 +529,10 @@ function Row({
       {cells.map((c, i) => (
         <div
           key={i}
+          style={win ? { animationDelay: `${i * 70}ms` } : undefined}
           className={`flex h-11 w-11 items-center justify-center rounded-lg border text-lg font-bold uppercase transition ${tileClass(
             active && !c.ch ? "empty" : c.state,
-          )}`}
+          )} ${win ? "animate-win-pop" : ""}`}
         >
           {c.ch}
         </div>
@@ -481,7 +556,7 @@ function KeyBtn({
 }) {
   const tone = state
     ? state === "correct"
-      ? "bg-teal-500 text-white"
+      ? "bg-grass-500 text-white"
       : state === "present"
         ? "bg-gold-500 text-ink-900"
         : "bg-ink-700 text-mute"

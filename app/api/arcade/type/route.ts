@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireMember } from "@/lib/auth/verify";
-import { startType, submitType } from "@/lib/games/type";
+import { startType, submitType, reAttemptType } from "@/lib/games/type";
 import { ledgerErrorResponse, gateResponse } from "@/lib/http";
 import { rateLimit } from "@/lib/rateLimit";
 import { config } from "@/lib/config";
@@ -17,12 +17,14 @@ const schema = z.discriminatedUnion("action", [
     text: z.string().min(1).max(5000),
     keystrokes: z.number().int().positive().max(100_000).optional(),
   }),
+  z.object({ action: z.literal("reattempt"), sessionId: z.string().min(1).max(64) }),
 ]);
 
 /**
  * POST /api/arcade/type
  *   { action:"start", tier }                      → serve a paragraph (spends a play)
  *   { action:"submit", sessionId, text, ... }     → finish the race, mint DC by WPM
+ *   { action:"reattempt", sessionId }             → free retry (fresh paragraph, no charge)
  */
 export async function POST(req: Request) {
   const gate = await requireMember(req);
@@ -57,6 +59,9 @@ export async function POST(req: Request) {
     const d = parsed.data;
     if (d.action === "start") {
       return NextResponse.json(await startType(actor, d.tier), { status: 201 });
+    }
+    if (d.action === "reattempt") {
+      return NextResponse.json(await reAttemptType(actor, d.sessionId), { status: 201 });
     }
     return NextResponse.json(await submitType(actor, d.sessionId, d.text, d.keystrokes));
   } catch (e) {

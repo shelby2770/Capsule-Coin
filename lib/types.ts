@@ -289,6 +289,9 @@ export type WordBoard = {
   attempts: WordBoardAttempt[]; // guesses + colour feedback for the current word
   done: boolean;
   totalReward: number; // DC minted across the session so far
+  wordElapsedMs: number; // server time on the CURRENT word (resets each word, persists across re-entry)
+  elapsedMs: number; // server-measured time since the session started (persists across re-entry)
+  ttlMs: number; // session lifespan — closes + finalizes once elapsed reaches this
 };
 
 export type WordGuessResult = {
@@ -313,14 +316,18 @@ export type TypeStart = {
   text: string;
   difficulty: number;
   startedAtMs: number; // server timing anchor (authoritative)
+  reAttemptsLeft: number; // free retries remaining on this paid entry
 };
 
 export type TypeSubmitResult = {
   wpm: number;
   accuracy: number; // % of keystrokes correct (display only; no DC bonus)
   elapsedSec: number;
-  minted: number; // DC minted for the run
-  totalReward: number;
+  minted: number; // DC minted for THIS run (0 if it didn't beat your best)
+  totalReward: number; // DC minted across the whole entry (best run so far)
+  bestWpm: number; // best WPM across all attempts on this entry
+  improved: boolean; // did this run set a new best (and mint a top-up)?
+  reAttemptsLeft: number; // free retries still available
 };
 
 /** A marketplace offer as broadcast in the notifications feed (all members). */
