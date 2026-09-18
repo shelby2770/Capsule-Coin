@@ -11,7 +11,9 @@
     "dev:lan": "next dev -H 0.0.0.0 -p 2770",
     "start:lan": "next build && next start -H 0.0.0.0 -p 2770",
     "serve:lan": "next start -H 0.0.0.0 -p 2770",
-    "start:cloud": "next start -H 0.0.0.0"
+    "start:cloud": "next start -H 0.0.0.0",
+    "test:serve": "node scripts/serve-test.cjs",
+    "test:rich": "node scripts/serve-test-rich.cjs"
   },
   "engines": {
     "node": ">=20"

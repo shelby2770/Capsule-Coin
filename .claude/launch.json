@@ -12,6 +12,12 @@
       "runtimeExecutable": "node",
       "runtimeArgs": ["scripts/serve-test.cjs"],
       "port": 2771
+    },
+    {
+      "name": "capsule-test-rich",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["scripts/serve-test-rich.cjs"],
+      "port": 2771
     }
   ]
 }
