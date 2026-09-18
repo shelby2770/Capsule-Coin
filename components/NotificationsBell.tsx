@@ -7,6 +7,7 @@ import {
   ArrowDownLeft,
   ArrowUpRight,
   Pickaxe,
+  Gamepad2,
   Flame,
   AlertTriangle,
   Ban,
@@ -48,7 +49,7 @@ function timeAgo(iso: string): string {
   return new Date(iso).toLocaleDateString();
 }
 
-const FEED_TYPES = new Set(["MINE", "TRANSFER", "TRADE", "BURN"]);
+const FEED_TYPES = new Set(["MINE", "GAME", "TRANSFER", "TRADE", "BURN"]);
 
 /**
  * Notifications: a header bell with a badge and three feeds —
@@ -172,6 +173,8 @@ export function NotificationsBell({
     const memo = t.memo ? ` · ${t.memo}` : "";
     if (t.type === "MINE")
       return { Icon: Pickaxe, tone: "text-ember-300", text: `Mined ${amt(t)}${memo}` };
+    if (t.type === "GAME")
+      return { Icon: Gamepad2, tone: "text-ember-300", text: `Won ${amt(t)}${memo}` };
     if (t.type === "BURN")
       return { Icon: Flame, tone: "text-orange-300", text: `Burned ${formatCC(t.amountCC)} CC to unlock mining` };
     if (t.toEmail === me)

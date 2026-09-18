@@ -31,6 +31,17 @@ const STATUS: Record<string, number> = {
   DAILY_CAP: 429,
   BANNED: 403,
   GRACE_LOCKED: 409,
+  // Arcade games
+  NO_FREE_PLAY: 409,
+  BAD_TIER: 400,
+  POOL_EMPTY: 409,
+  SESSION_NOT_FOUND: 404,
+  SESSION_CLOSED: 409,
+  NOT_YOUR_SESSION: 403,
+  BAD_GUESS: 400,
+  ATTEMPTS_DONE: 409,
+  WRONG_TEXT: 400,
+  TOO_FAST: 400,
 };
 
 /** Maps a thrown LedgerError to a clean JSON response; anything else -> 500. */

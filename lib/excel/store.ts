@@ -40,7 +40,7 @@ export type Member = {
   createdAt: string; // ISO
   // Mining v2 daily state (reset each UTC day)
   mineDay: string; // UTC yyyy-mm-dd of the current allowance window ("" = needs reset)
-  freeMinesUsed: number; // free mines used today
+  freeMinesUsed: number; // free plays used today — SHARED across mining + arcade games (see config.games.freePlaysPerDay)
   paidTier: number; // pay-to-mine packs unlocked today (0..ladder.length)
   paidRemaining: number; // paid attempts left from the last unlocked pack
   // Credit-floor grace / ban state (config.grace). When CC crosses below the soft
@@ -149,7 +149,8 @@ export type TxType =
   | "ADJUST"
   | "BURN"
   | "CONVERT" // a DC<->CC conversion leg (one DC-out row + one CC-in row)
-  | "PURCHASE"; // DC bought with real money (credited by an admin)
+  | "PURCHASE" // DC bought with real money (credited by an admin)
+  | "GAME"; // DC minted by winning an arcade game (word / type race)
 
 /** Which coin a transaction moved. Legacy rows (pre-DC) default to "CC". */
 export type Currency = "CC" | "DC";
@@ -1924,7 +1925,8 @@ function reserveRemaining(s: LedgerState): number {
   let convertedDc = 0;
   for (const tx of s.transactions) {
     if (tx.currency !== "DC") continue;
-    if (tx.type === "MINE") minedDc += tx.amountCC;
+    // Mining AND arcade-game wins both mint against the same fixed reserve.
+    if (tx.type === "MINE" || tx.type === "GAME") minedDc += tx.amountCC;
     else if (tx.type === "CONVERT") convertedDc += tx.amountCC;
   }
   const used = Math.max(0, minedDc - convertedDc);
@@ -2033,13 +2035,13 @@ export async function mineStatus(email: string): Promise<MiningStatus> {
   applyDailyReset(m, now);
 
   const reserve = reserveRemaining(s);
-  const freeRemaining = Math.max(0, config.mining.freePerDay - m.freeMinesUsed);
+  const freeRemaining = Math.max(0, config.games.freePlaysPerDay - m.freeMinesUsed);
   const hasAttempt = freeRemaining > 0 || m.paidRemaining > 0;
   const standing = effectiveStanding(m, now);
 
   return {
     freeRemaining,
-    freePerDay: config.mining.freePerDay,
+    freePerDay: config.games.freePlaysPerDay,
     paidRemaining: m.paidRemaining,
     tier: m.paidTier,
     nextTier: nextTierFor(m),
@@ -2067,7 +2069,7 @@ export async function mine(actor: {
     applyDailyReset(me, now);
     assertActive(me, now); // no mining while banned / in credit-floor grace
 
-    const freeLeft = config.mining.freePerDay - me.freeMinesUsed;
+    const freeLeft = config.games.freePlaysPerDay - me.freeMinesUsed;
     const paid = freeLeft <= 0;
     if (paid && me.paidRemaining <= 0) {
       throw new LedgerError(
@@ -2124,7 +2126,7 @@ export async function mine(actor: {
       capped: hitCap && reward >= config.mining.rewardCap,
       balance: me.balance,
       dcBalance: me.dcBalance,
-      freeRemaining: Math.max(0, config.mining.freePerDay - me.freeMinesUsed),
+      freeRemaining: Math.max(0, config.games.freePlaysPerDay - me.freeMinesUsed),
       paidRemaining: me.paidRemaining,
       reserveRemaining: round2(reserve - reward),
     };
@@ -2142,7 +2144,7 @@ export async function buyMiningPack(actor: {
     applyDailyReset(me, now);
     assertActive(me, now); // no pack purchases while banned / in credit-floor grace
 
-    if (config.mining.freePerDay - me.freeMinesUsed > 0) {
+    if (config.games.freePlaysPerDay - me.freeMinesUsed > 0) {
       throw new LedgerError("FREE_LEFT", "Use your free mines first.");
     }
     if (me.paidRemaining > 0) {
@@ -2185,6 +2187,164 @@ export async function buyMiningPack(actor: {
       nextTier: nextTierFor(me),
       fee: tier.fee,
       mines: tier.mines,
+    };
+  });
+}
+
+// ── Arcade games — shared free-play budget, paid entry, DC award ─────────────
+// The word/type games keep their own state in separate Firestore collections
+// (lib/games/*). Only the two ledger-touching legs live here: spending a play
+// (free counter or a CC burn) and minting the DC prize (reserve-capped).
+
+export type ArcadeGate = {
+  freeRemaining: number; // free plays left today (shared with mining)
+  freePlaysPerDay: number;
+  reserveRemaining: number; // shared DC mining reserve headroom
+  supplyCap: number;
+  balance: number; // CC wallet (for affording paid tiers)
+  dcBalance: number;
+  standing: "OK" | "GRACE" | "BANNED";
+  resetsAtMs: number; // next daily refill (UTC midnight)
+  tierFees: number[]; // CC fee for tiers 1..3
+};
+
+export type SpendPlayResult = { mode: "free" | "paid"; fee: number; balance: number };
+export type GameAward = {
+  minted: number; // DC actually minted (capped at reserve)
+  dcBalance: number;
+  balance: number;
+  reserveRemaining: number;
+};
+
+/** A free play is available while the shared daily counter is under the budget. */
+function hasFreePlay(m: Member): boolean {
+  return m.freeMinesUsed < config.games.freePlaysPerDay;
+}
+
+/**
+ * Read-only arcade gate for the hub + a game's pre-flight: free plays left, the
+ * shared reserve, standing, and what the member can afford. The daily reset is
+ * applied to a clone (not persisted) — the real reset commits on the next spend.
+ */
+export async function arcadeGate(email: string): Promise<ArcadeGate> {
+  const s = await ensureLoaded();
+  const now = Date.now();
+  const lower = email.trim().toLowerCase();
+  const found = s.members.find((m) => m.email === lower);
+  const m: Member = found
+    ? structuredClone(found)
+    : {
+        email: lower,
+        name: lower,
+        balance: 0,
+        dcBalance: 0,
+        verified: true,
+        role: roleFor(lower),
+        lastMinedAt: null,
+        createdAt: new Date().toISOString(),
+        mineDay: "",
+        freeMinesUsed: 0,
+        paidTier: 0,
+        paidRemaining: 0,
+        graceUntil: null,
+        banned: false,
+        onboardedAt: null,
+      };
+  applyDailyReset(m, now);
+  return {
+    freeRemaining: Math.max(0, config.games.freePlaysPerDay - m.freeMinesUsed),
+    freePlaysPerDay: config.games.freePlaysPerDay,
+    reserveRemaining: reserveRemaining(s),
+    supplyCap: config.mining.supplyCap,
+    balance: round2(m.balance),
+    dcBalance: round2(m.dcBalance),
+    standing: effectiveStanding(m, now),
+    resetsAtMs: nextResetMs(now),
+    tierFees: [...config.games.tierFees],
+  };
+}
+
+/**
+ * Spend ONE game entry — the authoritative gate for entering a game. Tier 0 uses
+ * the shared free play (blocked once today's budget is gone); a paid tier burns
+ * its CC fee (blocked if it would breach the soft floor). Mirrors mining's
+ * free/paid split. `label` names the game in the BURN memo.
+ */
+export async function spendGamePlay(
+  actor: { email: string; name: string },
+  tier: number,
+  label: string,
+): Promise<SpendPlayResult> {
+  return mutate((draft) => {
+    const me = ensureMemberDraft(draft, actor.email, actor.name);
+    const now = Date.now();
+    applyDailyReset(me, now);
+    assertActive(me, now); // no play while banned / in credit-floor grace
+
+    if (tier <= 0) {
+      if (!hasFreePlay(me)) {
+        throw new LedgerError(
+          "NO_FREE_PLAY",
+          "You've used your free play today (across mining + games). Pay to play a higher tier, or come back tomorrow.",
+        );
+      }
+      me.freeMinesUsed += 1;
+      return { mode: "free", fee: 0, balance: round2(me.balance) };
+    }
+
+    const fee = config.games.tierFees[tier - 1];
+    if (fee == null) throw new LedgerError("BAD_TIER", "Unknown game tier.");
+    if (round2(me.balance - fee) < config.balanceFloor) {
+      throw new LedgerError(
+        "INSUFFICIENT_FUNDS",
+        `Not enough CC — paying ${fee} CC would drop you below the ${config.balanceFloor} CC floor.`,
+      );
+    }
+    me.balance = round2(me.balance - fee);
+    appendTransaction(draft, {
+      type: "BURN",
+      fromEmail: me.email,
+      toEmail: null,
+      amountCC: fee,
+      offerId: null,
+      memo: `Burned ${fee} CC to play ${label} (tier ${tier})`,
+    });
+    return { mode: "paid", fee, balance: me.balance };
+  });
+}
+
+/**
+ * Mint DC for a game win, capped at the shared mining reserve (so games + mining
+ * can never exceed supplyCap). Records a GAME/DC transaction. A banned member
+ * can't receive DC (same rule as PURCHASE).
+ */
+export async function awardGameDc(
+  actor: { email: string; name: string },
+  reward: number,
+  memo: string,
+): Promise<GameAward> {
+  return mutate((draft) => {
+    const me = ensureMemberDraft(draft, actor.email, actor.name);
+    assertNotBanned(me);
+    const reserve = reserveRemaining(draft);
+    const minted = round2(Math.max(0, Math.min(reward, reserve)));
+    if (minted > 0) {
+      me.dcBalance = round2(me.dcBalance + minted);
+      appendTransaction(draft, {
+        type: "GAME",
+        currency: "DC",
+        fromEmail: null,
+        toEmail: me.email,
+        amountCC: minted,
+        offerId: null,
+        memo,
+      });
+    }
+    return {
+      minted,
+      dcBalance: round2(me.dcBalance),
+      balance: round2(me.balance),
+      reserveRemaining: round2(reserve - minted),
     };
   });
 }

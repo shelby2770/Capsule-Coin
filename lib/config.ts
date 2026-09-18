@@ -31,7 +31,6 @@ export const config = {
     // 10 brackets, so free reward scales 100% → 10% across the reserve. Paid mines
     // are not tapered. Set step to 0/negative to disable the taper (always full).
     rewardTaperStepCC: num(process.env.MINING_REWARD_TAPER_STEP, 500),
-    freePerDay: num(process.env.MINING_FREE_PER_DAY, 3),
     // Fixed DC reserve: at most this many NET DC can ever be mined into
     // circulation (total mined − converted back). Converting DC→CC reopens
     // headroom, so an active economy keeps mining alive — but total inflation can
@@ -100,6 +99,61 @@ export const config = {
     buyBonusScale: num(process.env.DC_BUY_BONUS_SCALE, 500),
     fruitMinisterEmail:
       process.env.FRUIT_MINISTER_EMAIL || "jakir.hossen@orbitax.com",
+  },
+  // Arcade — earn DC through mini-games (word guessing, type racing) alongside
+  // mining. Wins mint DC (tx type GAME) against the SAME fixed mining reserve
+  // (config.mining.supplyCap), so total DC inflation stays bounded. A paid entry
+  // burns CC (tx type BURN), mirroring the pay-to-mine ladder.
+  games: {
+    // One free play per UTC day, SHARED across mining + all games — a free member
+    // picks ONE of mining / word / type each day (tracked in Member.freeMinesUsed,
+    // reset by applyDailyReset). Paid plays are unlimited.
+    freePlaysPerDay: num(process.env.GAMES_FREE_PLAYS_PER_DAY, 1),
+    // Pay-to-play ladder: burn CC to play ONE game at a higher tier. Index 0 = tier
+    // 1. Tier 0 (free) costs nothing. Mirrors the mining ladder's 20/50/100 CC.
+    tierFees: [
+      num(process.env.GAMES_TIER1_FEE, 20),
+      num(process.env.GAMES_TIER2_FEE, 50),
+      num(process.env.GAMES_TIER3_FEE, 100),
+    ] as ReadonlyArray<number>,
+    word: {
+      // Words to guess per tier [free, t1, t2, t3]. Paid tiers show one word at a
+      // time; solving one reveals the next.
+      counts: [
+        num(process.env.GAMES_WORD_COUNT_FREE, 1),
+        num(process.env.GAMES_WORD_COUNT_T1, 3),
+        num(process.env.GAMES_WORD_COUNT_T2, 5),
+        num(process.env.GAMES_WORD_COUNT_T3, 10),
+      ] as ReadonlyArray<number>,
+      // Word lengths drawn from the pool (Wordle-style clues on 5–6 letters).
+      lengths: [5, 6] as ReadonlyArray<number>,
+      maxAttempts: num(process.env.GAMES_WORD_MAX_ATTEMPTS, 100),
+      // Reward per solved word = baseReward / 2^(attempts−1), then × a time factor.
+      // 1 try = baseReward, 2 = half, 3 = quarter …
+      baseReward: num(process.env.GAMES_WORD_BASE_REWARD, 100),
+      // "Normal" seconds per attempt. If the solve took longer than
+      // secPerAttempt × attempts, the reward scales by expected/elapsed, floored
+      // at timeFloor (so unusually slow play earns less).
+      secPerAttempt: num(process.env.GAMES_WORD_SEC_PER_ATTEMPT, 10),
+      timeFloor: num(process.env.GAMES_WORD_TIME_FLOOR, 0.1),
+    },
+    type: {
+      // Reward by net WPM = baseReward at baseWpm, halving each stepWpm below it,
+      // to 0 below minWpm. maxWpm is an anti-cheat sanity ceiling (paste guard).
+      baseReward: num(process.env.GAMES_TYPE_BASE_REWARD, 100),
+      baseWpm: num(process.env.GAMES_TYPE_BASE_WPM, 100),
+      stepWpm: num(process.env.GAMES_TYPE_STEP_WPM, 10),
+      minWpm: num(process.env.GAMES_TYPE_MIN_WPM, 40),
+      maxWpm: num(process.env.GAMES_TYPE_MAX_WPM, 220),
+      // Paragraph difficulty per tier [free, t1, t2, t3]. Pool docs are d1..d5
+      // (higher = harder); free tier gets the hardest, paid tiers get easier.
+      tierDifficulty: [
+        num(process.env.GAMES_TYPE_DIFF_FREE, 5),
+        num(process.env.GAMES_TYPE_DIFF_T1, 4),
+        num(process.env.GAMES_TYPE_DIFF_T2, 3),
+        num(process.env.GAMES_TYPE_DIFF_T3, 2),
+      ] as ReadonlyArray<number>,
+    },
   },
   // Marketplace offers auto-expire (and are deleted) once they're older than this
   // with no taker — checked lazily whenever offers are listed. Default 2 days.

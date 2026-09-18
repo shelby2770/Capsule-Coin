@@ -34,6 +34,7 @@ import {
   Repeat,
   Banknote,
   AlertTriangle,
+  Gamepad2,
 } from "lucide-react";
 
 export default function DashboardPage() {
@@ -171,6 +172,7 @@ const TX_ICON: Record<
   BURN: Flame,
   CONVERT: Repeat,
   PURCHASE: Banknote,
+  GAME: Gamepad2,
 };
 
 function ActivityRow({ tx, email }: { tx: TransactionPublic; email: string }) {

@@ -26,6 +26,7 @@ import {
   X,
   ChevronLeft,
   ChevronRight,
+  Gamepad2,
 } from "lucide-react";
 import { formatCC, formatDC } from "@/lib/format";
 
@@ -50,6 +51,7 @@ const TX_ICON: Record<
   BURN: Flame,
   CONVERT: Repeat,
   PURCHASE: Banknote,
+  GAME: Gamepad2,
 };
 
 const TYPE_FILTERS: {
@@ -63,6 +65,7 @@ const TYPE_FILTERS: {
   { key: "MINE", label: "Mining", match: (t) => t === "MINE" },
   { key: "CONVERT", label: "Convert", match: (t) => t === "CONVERT" },
   { key: "PURCHASE", label: "Buy DC", match: (t) => t === "PURCHASE" },
+  { key: "GAME", label: "Games", match: (t) => t === "GAME" },
   { key: "BURN", label: "Burns", match: (t) => t === "BURN" },
 ];
 
@@ -83,6 +86,8 @@ function txLabel(tx: LedgerTx): string {
       return "Burned to unlock mining";
     case "MINE":
       return "Mined DC";
+    case "GAME":
+      return "Won DC in the arcade";
     case "ESCROW_LOCK":
       return "Escrow locked";
     case "ESCROW_REFUND":

@@ -1,0 +1,500 @@
+"use client";
+
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import { AppShell } from "@/components/AppShell";
+import { useAuth } from "@/components/AuthProvider";
+import { GameIntroModal, type TierOption } from "@/components/GameIntroModal";
+import { DarkCoinLogo } from "@/components/DarkCoinLogo";
+import { emitLedgerChange } from "@/lib/ledgerEvents";
+import { formatDC } from "@/lib/format";
+import type {
+  ArcadeStatus,
+  WordBoard,
+  WordGuessResult,
+  GameLetterState,
+} from "@/lib/types";
+import { toast } from "sonner";
+import {
+  Puzzle,
+  Loader2,
+  Delete,
+  CornerDownLeft,
+  Trophy,
+  ArrowRight,
+  Timer,
+} from "lucide-react";
+
+type Attempt = { guess: string; feedback: GameLetterState[] };
+type Cur = {
+  sessionId: string;
+  tier: number;
+  wordsTotal: number;
+  wordIndex: number;
+  wordsSolved: number;
+  wordLength: number;
+  maxAttempts: number;
+  attempts: Attempt[];
+  totalReward: number;
+};
+
+const KEY_ROWS = ["qwertyuiop", "asdfghjkl", "zxcvbnm"];
+const RANK: Record<GameLetterState, number> = { absent: 0, present: 1, correct: 2 };
+
+function tileClass(s: GameLetterState | "empty" | "active"): string {
+  switch (s) {
+    case "correct":
+      return "bg-teal-500 border-teal-500 text-white";
+    case "present":
+      return "bg-gold-500 border-gold-500 text-ink-900";
+    case "absent":
+      return "bg-ink-700 border-ink-700 text-mute";
+    case "active":
+      return "border-ember-500/60 bg-ink-800/60 text-white";
+    default:
+      return "border-edge bg-ink-800/40 text-white";
+  }
+}
+
+export default function ArcadeWordPage() {
+  return (
+    <AppShell>
+      <WordGame />
+    </AppShell>
+  );
+}
+
+function WordGame() {
+  const { authedFetch, refresh } = useAuth();
+  const router = useRouter();
+
+  const [status, setStatus] = useState<ArcadeStatus | null>(null);
+  const [showIntro, setShowIntro] = useState(false);
+  const [starting, setStarting] = useState(false);
+  const [startErr, setStartErr] = useState<string | null>(null);
+  const [cur, setCur] = useState<Cur | null>(null);
+  const [typed, setTyped] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [banner, setBanner] = useState<string | null>(null);
+  const [finished, setFinished] = useState<{ words: number; total: number; dc: number } | null>(
+    null,
+  );
+  const [elapsed, setElapsed] = useState(0);
+  const wordStartRef = useRef<number>(Date.now());
+
+  const fromBoard = useCallback((b: WordBoard): Cur => {
+    wordStartRef.current = Date.now();
+    setElapsed(0);
+    return {
+      sessionId: b.sessionId,
+      tier: b.tier,
+      wordsTotal: b.wordsTotal,
+      wordIndex: b.wordIndex,
+      wordsSolved: b.wordsSolved,
+      wordLength: b.wordLength,
+      maxAttempts: b.maxAttempts,
+      attempts: b.attempts,
+      totalReward: b.totalReward,
+    };
+  }, []);
+
+  // On mount: resume an in-progress word game, else show the intro.
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const r = await authedFetch("/api/arcade");
+        if (!alive) return;
+        const s = (await r.json()) as ArcadeStatus;
+        setStatus(s);
+        if (s.resumable?.kind === "word") {
+          const sr = await authedFetch("/api/arcade/word", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ action: "state", sessionId: s.resumable.sessionId }),
+          });
+          if (sr.ok && alive) {
+            const b = (await sr.json()) as WordBoard;
+            if (!b.done) {
+              setCur(fromBoard(b));
+              return;
+            }
+          }
+        }
+        if (alive) setShowIntro(true);
+      } catch {
+        if (alive) setShowIntro(true);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [authedFetch, fromBoard]);
+
+  // Cosmetic per-word stopwatch.
+  useEffect(() => {
+    if (!cur || finished) return;
+    const id = setInterval(() => setElapsed(Math.floor((Date.now() - wordStartRef.current) / 1000)), 1000);
+    return () => clearInterval(id);
+  }, [cur, finished]);
+
+  const keyStates = useMemo(() => {
+    const m: Record<string, GameLetterState> = {};
+    for (const a of cur?.attempts ?? []) {
+      a.guess.toLowerCase().split("").forEach((ch, i) => {
+        const s = a.feedback[i];
+        if (!(ch in m) || RANK[s] > RANK[m[ch]]) m[ch] = s;
+      });
+    }
+    return m;
+  }, [cur?.attempts]);
+
+  const tiers: TierOption[] = useMemo(() => {
+    const counts = status?.wordCounts ?? [1, 3, 5, 10];
+    const fees = status?.tierFees ?? [20, 50, 100];
+    const freeUsed = (status?.freeRemaining ?? 0) <= 0;
+    const opts: TierOption[] = [
+      {
+        tier: 0,
+        label: "Free",
+        cost: 0,
+        detail: `${counts[0]} word`,
+        disabled: freeUsed,
+        note: freeUsed ? "Free play used today" : undefined,
+      },
+    ];
+    for (let t = 1; t <= fees.length; t++) {
+      opts.push({
+        tier: t,
+        label: `Tier ${t}`,
+        cost: fees[t - 1],
+        detail: `${counts[t]} words`,
+      });
+    }
+    return opts;
+  }, [status]);
+
+  async function start(tier: number) {
+    setStarting(true);
+    setStartErr(null);
+    try {
+      const r = await authedFetch("/api/arcade/word", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "start", tier }),
+      });
+      const d = await r.json();
+      if (!r.ok) {
+        setStartErr(d.message || "Couldn't start the game.");
+        return;
+      }
+      setCur(fromBoard(d as WordBoard));
+      setShowIntro(false);
+      setTyped("");
+      void refresh();
+    } catch {
+      setStartErr("Network error — try again.");
+    } finally {
+      setStarting(false);
+    }
+  }
+
+  const submit = useCallback(async () => {
+    if (!cur || busy || finished) return;
+    const guess = typed.toLowerCase();
+    if (guess.length !== cur.wordLength) return;
+    setBusy(true);
+    try {
+      const r = await authedFetch("/api/arcade/word", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "guess", sessionId: cur.sessionId, guess }),
+      });
+      const d = await r.json();
+      if (!r.ok) {
+        toast.error(d.message || "Guess rejected.");
+        return;
+      }
+      const res = d as WordGuessResult;
+      setTyped("");
+      // Append this attempt to the current word's board.
+      setCur((prev) =>
+        prev ? { ...prev, attempts: [...prev.attempts, { guess: guess.toUpperCase(), feedback: res.feedback }], totalReward: res.totalReward } : prev,
+      );
+
+      if (res.solved) toast.success(`Solved! +${formatDC(res.minted)} DC 🔥`);
+      else if (res.revealed) toast(`Out of tries — the word was ${res.revealed}.`);
+
+      if (res.wordComplete) {
+        void refresh();
+        emitLedgerChange();
+        if (res.done) {
+          setFinished({ words: res.wordsSolved, total: res.wordsTotal, dc: res.totalReward });
+        } else if (res.next) {
+          // Advance to the next word.
+          setBanner(
+            res.solved
+              ? `Solved! +${formatDC(res.minted)} DC — next word (${res.wordsSolved + 1}/${res.wordsTotal})`
+              : `Next word (${res.next.wordIndex + 1}/${res.wordsTotal})`,
+          );
+          setTimeout(() => setBanner(null), 2600);
+          wordStartRef.current = Date.now();
+          setElapsed(0);
+          setCur((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  wordIndex: res.next!.wordIndex,
+                  wordLength: res.next!.wordLength,
+                  wordsSolved: res.wordsSolved,
+                  attempts: [],
+                }
+              : prev,
+          );
+        }
+      }
+    } catch {
+      toast.error("Network error — try again.");
+    } finally {
+      setBusy(false);
+    }
+  }, [authedFetch, busy, cur, finished, refresh, typed]);
+
+  const onKey = useCallback(
+    (k: string) => {
+      if (!cur || busy || finished) return;
+      if (k === "Enter") {
+        void submit();
+      } else if (k === "Backspace") {
+        setTyped((t) => t.slice(0, -1));
+      } else if (/^[a-z]$/.test(k)) {
+        setTyped((t) => (t.length < cur.wordLength ? t + k : t));
+      }
+    },
+    [busy, cur, finished, submit],
+  );
+
+  // Physical keyboard.
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      const k = e.key;
+      if (k === "Enter" || k === "Backspace" || /^[a-zA-Z]$/.test(k)) {
+        e.preventDefault();
+        onKey(k === "Enter" || k === "Backspace" ? k : k.toLowerCase());
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [onKey]);
+
+  // ── render ──────────────────────────────────────────────────────────────────
+  if (!cur && !showIntro) {
+    return (
+      <div className="flex h-72 items-center justify-center text-mute">
+        <Loader2 className="animate-spin text-ember-400" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="mx-auto max-w-md space-y-4">
+      <div className="text-center">
+        <h1 className="flex items-center justify-center gap-2 font-display text-2xl font-bold text-white">
+          <Puzzle size={22} className="text-ember-400" /> Guess the Word
+        </h1>
+        <p className="mt-1 text-sm text-mute">Green = right spot · Yellow = wrong spot · Grey = not in the word.</p>
+      </div>
+
+      {showIntro && (
+        <GameIntroModal
+          title="Guess the Word"
+          icon={<Puzzle size={22} />}
+          intro="Guess the hidden 5–6 letter word. After each guess, tiles turn green (right letter, right spot), yellow (right letter, wrong spot), or grey (not in the word)."
+          rules={[
+            "Solve fast and in few tries — reward halves each attempt (100, 50, 25, 12.5 …) and drops if you take too long.",
+            "Up to 100 attempts per word. Paid tiers give more words, shown one at a time.",
+            "Wins mint DC. Backing out here costs nothing.",
+          ]}
+          tiers={tiers}
+          busy={starting}
+          error={startErr}
+          onContinue={start}
+          onBack={() => router.push("/arcade")}
+        />
+      )}
+
+      {cur && (
+        <>
+          {/* status bar */}
+          <div className="dc-card flex items-center justify-between p-4 text-sm">
+            <div className="text-mute">
+              Word <span className="font-semibold text-white">{cur.wordIndex + 1}</span>
+              <span className="text-mute">/{cur.wordsTotal}</span>
+              {cur.tier > 0 && <span className="ml-2 text-ember-300">Tier {cur.tier}</span>}
+            </div>
+            <div className="flex items-center gap-3">
+              <span className="inline-flex items-center gap-1 text-mute">
+                <Timer size={14} /> {elapsed}s
+              </span>
+              <span className="inline-flex items-center gap-1 font-semibold text-ember-300">
+                <DarkCoinLogo size={14} /> {formatDC(cur.totalReward)}
+              </span>
+            </div>
+          </div>
+
+          {banner && (
+            <div className="rounded-2xl border border-teal-500/40 bg-teal-500/10 p-3 text-center text-sm text-teal-200">
+              {banner}
+            </div>
+          )}
+
+          {/* board */}
+          <div className="dc-card p-4">
+            <div className="mb-2 text-center text-xs text-mute">
+              Attempt {cur.attempts.length + (finished ? 0 : 1)} · {cur.maxAttempts} max
+            </div>
+            <div className="flex max-h-[46vh] flex-col gap-1.5 overflow-y-auto pr-1">
+              {cur.attempts.map((a, ri) => (
+                <Row key={ri} letters={a.guess.split("")} states={a.feedback} len={cur.wordLength} />
+              ))}
+              {!finished && (
+                <Row
+                  letters={typed.toUpperCase().split("")}
+                  states={null}
+                  len={cur.wordLength}
+                  active
+                />
+              )}
+            </div>
+          </div>
+
+          {/* keyboard */}
+          {!finished && (
+            <div className="space-y-1.5">
+              {KEY_ROWS.map((row, i) => (
+                <div key={i} className="flex justify-center gap-1.5">
+                  {i === 2 && (
+                    <KeyBtn wide onClick={() => onKey("Enter")} disabled={busy || typed.length !== cur.wordLength}>
+                      {busy ? <Loader2 size={16} className="animate-spin" /> : <CornerDownLeft size={16} />}
+                    </KeyBtn>
+                  )}
+                  {row.split("").map((ch) => (
+                    <KeyBtn key={ch} state={keyStates[ch]} onClick={() => onKey(ch)} disabled={busy}>
+                      {ch.toUpperCase()}
+                    </KeyBtn>
+                  ))}
+                  {i === 2 && (
+                    <KeyBtn wide onClick={() => onKey("Backspace")} disabled={busy}>
+                      <Delete size={16} />
+                    </KeyBtn>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+
+      {finished && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-ink-900/80 p-4 backdrop-blur-sm">
+          <div className="dc-card animate-cap-slam w-full max-w-sm p-7 text-center">
+            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-ember-500/15 text-ember-300">
+              <Trophy size={28} />
+            </div>
+            <h2 className="mt-4 font-display text-2xl font-semibold text-white">Game over</h2>
+            <p className="mt-1 text-sm text-mute">
+              Solved {finished.words} of {finished.total} word{finished.total === 1 ? "" : "s"}.
+            </p>
+            <div className="mt-4 flex items-center justify-center gap-2 font-display text-3xl font-bold text-gradient-flame">
+              <DarkCoinLogo size={26} /> +{formatDC(finished.dc)} DC
+            </div>
+            <div className="mt-6 flex gap-2">
+              <button className="btn-ghost flex-1" onClick={() => router.push("/arcade")}>
+                Arcade
+              </button>
+              <button
+                className="btn-ember flex-1"
+                onClick={() => {
+                  setFinished(null);
+                  setCur(null);
+                  void (async () => {
+                    const r = await authedFetch("/api/arcade");
+                    setStatus((await r.json()) as ArcadeStatus);
+                    setShowIntro(true);
+                  })();
+                }}
+              >
+                Play again <ArrowRight size={16} />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Row({
+  letters,
+  states,
+  len,
+  active,
+}: {
+  letters: string[];
+  states: GameLetterState[] | null;
+  len: number;
+  active?: boolean;
+}) {
+  const cells = Array.from({ length: len }, (_, i) => ({
+    ch: letters[i] ?? "",
+    state: states ? states[i] : letters[i] ? ("active" as const) : ("empty" as const),
+  }));
+  return (
+    <div className="flex justify-center gap-1.5">
+      {cells.map((c, i) => (
+        <div
+          key={i}
+          className={`flex h-11 w-11 items-center justify-center rounded-lg border text-lg font-bold uppercase transition ${tileClass(
+            active && !c.ch ? "empty" : c.state,
+          )}`}
+        >
+          {c.ch}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function KeyBtn({
+  children,
+  onClick,
+  disabled,
+  state,
+  wide,
+}: {
+  children: React.ReactNode;
+  onClick: () => void;
+  disabled?: boolean;
+  state?: GameLetterState;
+  wide?: boolean;
+}) {
+  const tone = state
+    ? state === "correct"
+      ? "bg-teal-500 text-white"
+      : state === "present"
+        ? "bg-gold-500 text-ink-900"
+        : "bg-ink-700 text-mute"
+    : "bg-ink-700/70 text-white hover:bg-ink-600";
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className={`flex h-12 items-center justify-center rounded-lg text-sm font-semibold transition disabled:opacity-50 ${
+        wide ? "px-3" : "w-8 sm:w-9"
+      } ${tone}`}
+    >
+      {children}
+    </button>
+  );
+}

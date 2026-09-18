@@ -19,7 +19,7 @@ import {
   Wallet,
   Trophy,
   Store,
-  Pickaxe,
+  Gamepad2,
   FileSpreadsheet,
   Loader2,
   Lock,
@@ -36,7 +36,7 @@ const NAV: Array<{
   { href: "/dashboard", label: "Wallet", icon: Wallet },
   { href: "/leaderboard", label: "Leaderboard", icon: Trophy },
   { href: "/market", label: "Market", icon: Store },
-  { href: "/mine", label: "Mine", icon: Pickaxe },
+  { href: "/arcade", label: "Arcade", icon: Gamepad2 },
   { href: "/convert", label: "Convert", icon: Repeat },
   { href: "/fund", label: "Fund", icon: Sprout },
   { href: "/ledger", label: "Ledger", icon: FileSpreadsheet },
@@ -223,7 +223,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       {/* nav pills */}
       <nav className="mt-5 flex gap-2 overflow-x-auto pb-1">
         {NAV.map((item) => {
-          const active = pathname === item.href;
+          const active =
+            pathname === item.href ||
+            (item.href === "/arcade" &&
+              (pathname.startsWith("/arcade") || pathname === "/mine"));
           const base =
             "inline-flex items-center gap-2 whitespace-nowrap rounded-capsule px-4 py-2 text-sm transition";
           if (item.soon) {

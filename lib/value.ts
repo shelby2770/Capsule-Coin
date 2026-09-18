@@ -28,7 +28,7 @@ function supplyAt(state: LedgerState, t: number): number {
   for (const tx of state.transactions) {
     const ts = Date.parse(tx.createdAt);
     if (Number.isNaN(ts) || ts > t) continue;
-    if (tx.type === "MINE") s += tx.amountCC;
+    if (tx.type === "MINE" || tx.type === "GAME") s += tx.amountCC;
     else if (tx.type === "BURN") s -= tx.amountCC;
     else if (tx.type === "ADJUST") s += tx.toEmail ? tx.amountCC : -tx.amountCC;
   }
@@ -220,9 +220,10 @@ function dcSupplyAt(state: LedgerState, t: number): number {
     if (tx.currency !== "DC") continue;
     const ts = Date.parse(tx.createdAt);
     if (Number.isNaN(ts) || ts > t) continue;
-    // Minting adds DC; converting to CC destroys it; a DC trade just moves DC
-    // between two members, so it's supply-neutral and intentionally skipped.
-    if (tx.type === "MINE" || tx.type === "PURCHASE") s += tx.amountCC;
+    // Minting adds DC (mining, game wins, real-money purchase); converting to CC
+    // destroys it; a DC trade just moves DC between two members, so it's
+    // supply-neutral and intentionally skipped.
+    if (tx.type === "MINE" || tx.type === "GAME" || tx.type === "PURCHASE") s += tx.amountCC;
     else if (tx.type === "CONVERT") s -= tx.amountCC;
     else if (tx.type === "ADJUST") s += tx.toEmail ? tx.amountCC : -tx.amountCC;
   }

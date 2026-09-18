@@ -143,7 +143,8 @@ export type TransactionPublic = {
     | "ADJUST"
     | "BURN"
     | "CONVERT"
-    | "PURCHASE";
+    | "PURCHASE"
+    | "GAME";
   currency: Currency;
   fromEmail: string | null;
   toEmail: string | null;
@@ -209,7 +210,8 @@ export type LedgerTx = {
     | "ADJUST"
     | "BURN"
     | "CONVERT"
-    | "PURCHASE";
+    | "PURCHASE"
+    | "GAME";
   currency: Currency;
   fromName: string | null;
   toName: string | null;
@@ -250,6 +252,75 @@ export type DcRateResponse = {
   clampMin: number; // floor of the scarcity multiplier
   clampMax: number; // ceiling of the scarcity multiplier
   series: ValuePoint[]; // per-DC rate over the last 24h
+};
+
+// ── Arcade games (earn DC through Wordle-style + type-racing games) ──────────
+export type GameKind = "word" | "type";
+
+/** Hub status: shared free-play budget, the reserve, and per-game affordances. */
+export type ArcadeStatus = {
+  freeRemaining: number; // free plays left today (shared across mining + games)
+  freePlaysPerDay: number;
+  reserveRemaining: number; // shared DC mining reserve headroom
+  supplyCap: number;
+  balance: number; // CC wallet (for affording paid tiers)
+  dcBalance: number;
+  standing: "OK" | "GRACE" | "BANNED";
+  resetsAtMs: number; // next daily refill (UTC midnight)
+  tierFees: number[]; // CC fee for tiers 1..3
+  wordsRemaining: number; // words left in the pool
+  wordCounts: number[]; // words guessed per tier [free, 1, 2, 3]
+  resumable: { kind: GameKind; sessionId: string } | null; // an unfinished game to resume
+};
+
+export type GameLetterState = "correct" | "present" | "absent";
+export type WordBoardAttempt = { guess: string; feedback: GameLetterState[] };
+
+/** Public view of a word-guessing session — never carries the answer. */
+export type WordBoard = {
+  sessionId: string;
+  tier: number;
+  wordsTotal: number;
+  wordIndex: number; // which word (0-based) is showing
+  wordsSolved: number;
+  wordLength: number;
+  maxAttempts: number;
+  attemptsUsed: number;
+  attempts: WordBoardAttempt[]; // guesses + colour feedback for the current word
+  done: boolean;
+  totalReward: number; // DC minted across the session so far
+};
+
+export type WordGuessResult = {
+  feedback: GameLetterState[];
+  solved: boolean;
+  minted: number; // DC minted for this word (0 if not solved / reserve empty)
+  attemptsUsed: number;
+  attemptsLeft: number;
+  wordComplete: boolean; // solved OR out of attempts
+  revealed: string | null; // the answer, only when the word was failed
+  done: boolean; // whole session finished
+  wordsSolved: number;
+  wordsTotal: number;
+  totalReward: number;
+  next: { wordIndex: number; wordLength: number; attemptsUsed: number } | null;
+};
+
+/** Type-racing session start — the paragraph text is sent (it's what you type). */
+export type TypeStart = {
+  sessionId: string;
+  tier: number;
+  text: string;
+  difficulty: number;
+  startedAtMs: number; // server timing anchor (authoritative)
+};
+
+export type TypeSubmitResult = {
+  wpm: number;
+  accuracy: number; // % of keystrokes correct (display only; no DC bonus)
+  elapsedSec: number;
+  minted: number; // DC minted for the run
+  totalReward: number;
 };
 
 /** A marketplace offer as broadcast in the notifications feed (all members). */
