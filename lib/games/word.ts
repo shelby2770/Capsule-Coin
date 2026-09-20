@@ -165,6 +165,11 @@ export function wordBoard(session: GameSession): WordBoard {
     attemptsUsed: cur?.attempts.length ?? 0,
     attempts,
     done: session.status !== "active",
+    // Once the session is over (solved-out or timed out), reveal the current
+    // word's answer if it wasn't solved — so a timeout shows the word, mirroring
+    // the out-of-attempts path. Never populated while the game is active.
+    revealed:
+      session.status !== "active" && cur && !cur.solved ? cur.answer.toUpperCase() : null,
     totalReward: round2(session.totalReward),
     wordElapsedMs: cur && cur.servedAt ? Math.max(0, Date.now() - cur.servedAt) : 0,
     elapsedMs: Math.max(0, Date.now() - session.createdAt),

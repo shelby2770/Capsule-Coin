@@ -280,7 +280,7 @@ export type ArcadeStatus = {
 export type GameLetterState = "correct" | "present" | "absent";
 export type WordBoardAttempt = { guess: string; feedback: GameLetterState[] };
 
-/** Public view of a word-guessing session — never carries the answer. */
+/** Public view of a word-guessing session — carries the answer only once the session is over. */
 export type WordBoard = {
   sessionId: string;
   tier: number;
@@ -292,6 +292,7 @@ export type WordBoard = {
   attemptsUsed: number;
   attempts: WordBoardAttempt[]; // guesses + colour feedback for the current word
   done: boolean;
+  revealed?: string | null; // the current word's answer — only once the session is over (e.g. time ran out); never during play
   totalReward: number; // DC minted across the session so far
   wordElapsedMs: number; // server time on the CURRENT word (resets each word, persists across re-entry)
   elapsedMs: number; // server-measured time since the session started (persists across re-entry)

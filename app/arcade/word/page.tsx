@@ -85,9 +85,12 @@ function WordGame() {
   const [typed, setTyped] = useState("");
   const [busy, setBusy] = useState(false);
   const [banner, setBanner] = useState<string | null>(null);
-  const [finished, setFinished] = useState<{ words: number; total: number; dc: number } | null>(
-    null,
-  );
+  const [finished, setFinished] = useState<{
+    words: number;
+    total: number;
+    dc: number;
+    revealed?: string | null; // the unsolved word to reveal (on timeout / out of attempts)
+  } | null>(null);
   // One server-anchored stopwatch for the whole session (base = server-measured
   // elapsed at fetch; at = client clock then; live value = base + (now − at)). It
   // runs the entire game, survives leave/return, and closes the session at the cap.
@@ -162,7 +165,12 @@ function WordGame() {
       if (b.done) {
         void refresh();
         emitLedgerChange();
-        setFinished({ words: b.wordsSolved, total: b.wordsTotal, dc: b.totalReward });
+        setFinished({
+          words: b.wordsSolved,
+          total: b.wordsTotal,
+          dc: b.totalReward,
+          revealed: b.revealed ?? null,
+        });
       }
     } catch {
       /* the ticker will retry on the next tick */
@@ -281,7 +289,12 @@ function WordGame() {
         void refresh();
         emitLedgerChange();
         if (res.done) {
-          setFinished({ words: res.wordsSolved, total: res.wordsTotal, dc: res.totalReward });
+          setFinished({
+            words: res.wordsSolved,
+            total: res.wordsTotal,
+            dc: res.totalReward,
+            revealed: res.revealed ?? null,
+          });
         } else if (res.next) {
           // Advance to the next word — the session clock keeps running.
           setBanner(
@@ -485,6 +498,15 @@ function WordGame() {
             <p className="mt-1 text-sm text-mute">
               Solved {finished.words} of {finished.total} word{finished.total === 1 ? "" : "s"}.
             </p>
+            {finished.revealed && (
+              <p className="mt-1 text-sm text-mute">
+                The word was{" "}
+                <span className="font-semibold uppercase tracking-wide text-white">
+                  {finished.revealed}
+                </span>
+                .
+              </p>
+            )}
             <div className="mt-4 flex items-center justify-center gap-2 font-display text-3xl font-bold text-gradient-flame">
               <DarkCoinLogo size={26} /> +{formatDC(finished.dc)} DC
             </div>

@@ -158,9 +158,9 @@ export const config = {
       // base (attempts × time) reward — paid tiers pay proportionally more.
       tierRewardMult: [
         num(process.env.GAMES_WORD_MULT_FREE, 1),
-        num(process.env.GAMES_WORD_MULT_T1, 1.5),
-        num(process.env.GAMES_WORD_MULT_T2, 2),
-        num(process.env.GAMES_WORD_MULT_T3, 3),
+        num(process.env.GAMES_WORD_MULT_T1, 1.1),
+        num(process.env.GAMES_WORD_MULT_T2, 1.2),
+        num(process.env.GAMES_WORD_MULT_T3, 1.3),
       ] as ReadonlyArray<number>,
       // A word session self-ends after this many seconds, PER TIER [free,1,2,3].
       // The on-screen clock keeps running across leave/return; when it hits the
