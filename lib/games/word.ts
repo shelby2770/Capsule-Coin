@@ -47,13 +47,18 @@ export function scoreGuess(guess: string, answer: string): LetterState[] {
 }
 
 /**
- * reward = baseReward / 2^(attempts-1), cut for unusually slow play, then scaled
- * by the tier's reward multiplier (free ×1, paid tiers pay proportionally more).
+ * Reward for a solved word. Guess-count sets the base — a FIRST-guess solve pays
+ * baseReward (100); from the 2nd guess it drops to secondChanceReward (10) and
+ * halves each extra guess (3rd = 5, 4th = 2.5, …). That base is then cut for
+ * unusually slow play (time factor) and scaled by the tier's reward multiplier
+ * (free ×1, paid tiers pay proportionally more).
  */
 function wordReward(attempts: number, elapsedSec: number, tier: number): number {
-  const { baseReward, secPerAttempt, timeFloor, tierRewardMult } = config.games.word;
-  const base = baseReward / Math.pow(2, Math.max(0, attempts - 1));
-  const expected = secPerAttempt * attempts;
+  const { baseReward, secondChanceReward, secPerAttempt, timeFloor, tierRewardMult } =
+    config.games.word;
+  const a = Math.max(1, attempts);
+  const base = a <= 1 ? baseReward : secondChanceReward / Math.pow(2, a - 2);
+  const expected = secPerAttempt * a;
   const timeFactor =
     elapsedSec <= expected ? 1 : Math.max(timeFloor, expected / Math.max(1, elapsedSec));
   const mult = tierRewardMult[tier] ?? 1;

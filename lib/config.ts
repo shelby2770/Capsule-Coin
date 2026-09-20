@@ -142,9 +142,13 @@ export const config = {
       // Word lengths drawn from the pool (Wordle-style clues on 5–6 letters).
       lengths: [5, 6] as ReadonlyArray<number>,
       maxAttempts: num(process.env.GAMES_WORD_MAX_ATTEMPTS, 7),
-      // Reward per solved word = baseReward / 2^(attempts−1), then × a time factor.
-      // 1 try = baseReward, 2 = half, 3 = quarter …
+      // Reward per solved word by number of guesses (before the time factor + tier
+      // multiplier): a FIRST-guess solve pays baseReward; from the 2nd guess on it
+      // drops to secondChanceReward and then halves each extra guess. This makes a
+      // clean first solve far more valuable than a lucky late one.
+      //   1 guess = baseReward (100), 2 = secondChanceReward (10), 3 = 5, 4 = 2.5 …
       baseReward: num(process.env.GAMES_WORD_BASE_REWARD, 100),
+      secondChanceReward: num(process.env.GAMES_WORD_SECOND_CHANCE_REWARD, 10),
       // "Normal" seconds per attempt. If the solve took longer than
       // secPerAttempt × attempts, the reward scales by expected/elapsed, floored
       // at timeFloor (so unusually slow play earns less).
