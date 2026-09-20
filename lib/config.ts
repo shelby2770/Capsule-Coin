@@ -216,6 +216,12 @@ export const config = {
     problem: {
       // Seconds to solve one problem — server-anchored; auto-submits at zero.
       secToSolve: num(process.env.GAMES_PROBLEM_SEC, 300), // 5 minutes
+      // Hard ceiling (ms) on how long the AI grader may take on submit. If grading
+      // exceeds this (or the grader errors out), the entry is REFUNDED — CC back for
+      // a paid tier, the free play returned for the free tier — and no DC is minted.
+      // Keep it >= OPENROUTER_TIMEOUT_MS so the HTTP client's own abort usually fires
+      // first; this is the backstop for a hang beyond that.
+      gradeTimeoutMs: num(process.env.GAMES_PROBLEM_GRADE_TIMEOUT_MS, 40000),
       // Max DC per tier [free, t1]. The grader returns a mark 0–10; the award is
       // (mark / 10) × this cap. The array length also defines which tiers exist —
       // tier index ≥ maxDc.length is "coming soon" (Tier 2/3 aren't live yet).

@@ -8,7 +8,7 @@ import { GameIntroModal, type TierOption } from "@/components/GameIntroModal";
 import { Portal } from "@/components/Portal";
 import { DarkCoinLogo } from "@/components/DarkCoinLogo";
 import { emitLedgerChange } from "@/lib/ledgerEvents";
-import { formatDC } from "@/lib/format";
+import { formatCC, formatDC } from "@/lib/format";
 import type {
   ArcadeStatus,
   ProblemBoard,
@@ -17,7 +17,7 @@ import type {
   ProblemCopyResult,
 } from "@/lib/types";
 import { toast } from "sonner";
-import { Code2, Loader2, Timer, Trophy, ArrowRight, Ban, ShieldAlert, Lightbulb } from "lucide-react";
+import { Code2, Loader2, Timer, Trophy, ArrowRight, Ban, ShieldAlert, Lightbulb, RotateCcw } from "lucide-react";
 
 type Lang = "cpp" | "python";
 
@@ -476,32 +476,51 @@ function ProblemGame() {
         <Portal>
           <div className="fixed inset-0 z-[200] flex items-center justify-center bg-ink-900/80 p-4 backdrop-blur-sm">
             <div className="dc-card animate-cap-slam w-full max-w-sm p-7 text-center">
-              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-ember-500/15 text-ember-300">
-                <Trophy size={28} />
-              </div>
-              <h2 className="mt-4 font-display text-3xl font-bold text-white">{result.mark}/10</h2>
-              <p className="mt-2 text-sm text-mute">{result.feedback}</p>
-              {result.breakdown && result.breakdown.length > 0 && (
-                <div className="mt-4 space-y-2 text-left">
-                  {result.breakdown.map((b) => (
-                    <div key={b.label} className="flex items-center gap-2.5">
-                      <span className="w-36 shrink-0 text-[11px] text-mute">{b.label}</span>
-                      <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/10">
-                        <div
-                          className="h-full rounded-full bg-ember-500"
-                          style={{ width: `${Math.round((b.score / b.max) * 100)}%` }}
-                        />
-                      </div>
-                      <span className="w-7 shrink-0 text-right text-[11px] tabular-nums text-white/80">
-                        {b.score}/{b.max}
-                      </span>
+              {result.refunded ? (
+                <>
+                  <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-white/10 text-mute">
+                    <RotateCcw size={28} />
+                  </div>
+                  <h2 className="mt-4 font-display text-xl font-semibold text-white">
+                    Couldn&apos;t grade in time
+                  </h2>
+                  <p className="mt-2 text-sm text-mute">{result.feedback}</p>
+                  <div className="mt-4 inline-flex items-center gap-2 rounded-xl border border-white/15 bg-black/20 px-3 py-2 text-sm font-semibold text-white">
+                    {result.refunded.mode === "free"
+                      ? "Free play returned"
+                      : `+${formatCC(result.refunded.fee)} CC refunded`}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-ember-500/15 text-ember-300">
+                    <Trophy size={28} />
+                  </div>
+                  <h2 className="mt-4 font-display text-3xl font-bold text-white">{result.mark}/10</h2>
+                  <p className="mt-2 text-sm text-mute">{result.feedback}</p>
+                  {result.breakdown && result.breakdown.length > 0 && (
+                    <div className="mt-4 space-y-2 text-left">
+                      {result.breakdown.map((b) => (
+                        <div key={b.label} className="flex items-center gap-2.5">
+                          <span className="w-36 shrink-0 text-[11px] text-mute">{b.label}</span>
+                          <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/10">
+                            <div
+                              className="h-full rounded-full bg-ember-500"
+                              style={{ width: `${Math.round((b.score / b.max) * 100)}%` }}
+                            />
+                          </div>
+                          <span className="w-7 shrink-0 text-right text-[11px] tabular-nums text-white/80">
+                            {b.score}/{b.max}
+                          </span>
+                        </div>
+                      ))}
                     </div>
-                  ))}
-                </div>
+                  )}
+                  <div className="mt-4 flex items-center justify-center gap-2 font-display text-3xl font-bold text-gradient-flame">
+                    <DarkCoinLogo size={26} /> +{formatDC(result.minted)} DC
+                  </div>
+                </>
               )}
-              <div className="mt-4 flex items-center justify-center gap-2 font-display text-3xl font-bold text-gradient-flame">
-                <DarkCoinLogo size={26} /> +{formatDC(result.minted)} DC
-              </div>
               <div className="mt-6 flex gap-2">
                 <button className="btn-ghost flex-1" onClick={() => router.push("/arcade")}>
                   Arcade

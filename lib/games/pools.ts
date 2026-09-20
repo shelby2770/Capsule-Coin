@@ -161,6 +161,32 @@ export async function consumeProblem(bucket: string): Promise<PoolProblem> {
   });
 }
 
+/**
+ * Put a consumed problem back into its bucket — used when a served problem can't
+ * be completed (e.g. the grader timed out and the entry was refunded), so it isn't
+ * lost from the pool. No-op if an item with the same id is already present.
+ * `problem.topic` is the bucket it was drawn from (consumeProblem sets topic =
+ * bucket for both the free key and the paid topics).
+ */
+export async function returnProblem(problem: PoolProblem): Promise<void> {
+  const bucket = problem.topic;
+  if (!bucket) return;
+  await adminDb.runTransaction(async (tx) => {
+    const ref = gameCollection(PROBLEM_POOL).doc(bucket);
+    const snap = await tx.get(ref);
+    const raw = snap.exists ? snap.data()?.problems : null;
+    const rawArr = Array.isArray(raw) ? (raw as Array<Record<string, unknown>>) : [];
+    if (rawArr.some((p) => String((p as { id?: unknown }).id ?? "") === problem.id)) return;
+    rawArr.push({
+      id: problem.id,
+      title: problem.title,
+      statement: problem.statement,
+      difficulty: problem.difficulty,
+    });
+    tx.set(ref, { problems: rawArr }, { merge: true });
+  });
+}
+
 /** Total problems left across the free bucket + every topic (hub's "problems" stat). */
 export async function remainingProblemCount(): Promise<number> {
   const buckets = [config.games.problem.freeKey, ...config.games.problem.topics];

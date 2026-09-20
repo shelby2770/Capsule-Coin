@@ -2,10 +2,10 @@ import "server-only";
 
 import { config } from "@/lib/config";
 import { round2 } from "@/lib/format";
-import { LedgerError, arcadeGate, spendGamePlay, awardGameDc } from "@/lib/excel/store";
+import { LedgerError, arcadeGate, spendGamePlay, awardGameDc, refundGamePlay } from "@/lib/excel/store";
 import { assertValidTier } from "@/lib/games/common";
 import { assertCanStart, assertTierNotUsedToday } from "@/lib/games/word";
-import { consumeProblem, remainingProblemCount, availableProblemTopics } from "@/lib/games/pools";
+import { consumeProblem, returnProblem, remainingProblemCount, availableProblemTopics } from "@/lib/games/pools";
 import { assertNotProblemBanned, banFromProblem, problemBanUntil } from "@/lib/games/bans";
 import {
   createSession,
@@ -259,6 +259,40 @@ async function gradeSubmission(
   return { mark, feedback, breakdown };
 }
 
+/**
+ * Grade with a hard time budget. Races the grader against a timeout so a slow or
+ * hung LLM can't keep the player waiting indefinitely; on timeout it throws
+ * GRADER_TIMEOUT, which submitProblem treats as "couldn't grade" → refund.
+ */
+async function gradeWithTimeout(
+  statement: string,
+  intuition: string,
+  code: string,
+  language: string,
+  ms: number,
+): Promise<Grade> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () => reject(new LedgerError("GRADER_TIMEOUT", "The grader took too long to respond.")),
+      Math.max(1000, ms),
+    );
+  });
+  try {
+    return await Promise.race([gradeSubmission(statement, intuition, code, language), timeout]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+/** True for errors that mean "the grader couldn't score this" → refund the entry. */
+function graderUnavailable(e: unknown): boolean {
+  return (
+    e instanceof LedgerError &&
+    (e.code === "GRADER_TIMEOUT" || e.code === "LLM_ERROR" || e.code === "LLM_UNCONFIGURED")
+  );
+}
+
 export async function submitProblem(
   actor: { email: string; name: string },
   sessionId: string,
@@ -271,17 +305,45 @@ export async function submitProblem(
     throw new LedgerError("SESSION_CLOSED", "This problem is already finished.");
   }
   const lang = language === "python" ? "python" : "cpp";
-
-  // Grade FIRST (may throw a retryable LLM error) — only close + award on success,
-  // so a grader hiccup lets the player retry instead of losing their entry.
-  const { mark, feedback, breakdown } = await gradeSubmission(
-    session.problem!.statement,
-    String(intuition ?? ""),
-    String(code ?? ""),
-    lang,
-  );
-
   const cap = maxDcFor(session.tier);
+
+  // Grade with a hard time budget (config.games.problem.gradeTimeoutMs). If the
+  // grader times out or errors, we can't score the solve — so REFUND the entry
+  // (CC back for a paid tier, the free play returned for the free tier), put the
+  // problem back in the pool, close the session, and mint no DC. Grading before
+  // any award also means a successful grade never loses the entry.
+  let graded: Grade;
+  try {
+    graded = await gradeWithTimeout(
+      session.problem!.statement,
+      String(intuition ?? ""),
+      String(code ?? ""),
+      lang,
+      config.games.problem.gradeTimeoutMs,
+    );
+  } catch (e) {
+    if (!graderUnavailable(e)) throw e;
+    const refund = await refundGamePlay(actor, session.tier, "Problem Solving");
+    await returnProblem(session.problem!).catch(() => {}); // best-effort; refund already stands
+    // Delete the session (rather than mark it) so this counts as a full undo: the
+    // "one play per paid tier per day" guard (playedTierToday) sees no record, so
+    // the player may replay this tier today with a fresh problem.
+    await deleteSession(session.id);
+    return {
+      mark: 0,
+      feedback:
+        refund.mode === "free"
+          ? "The AI judge couldn't grade your solution in time, so your free play has been returned — try again or pick another game today."
+          : `The AI judge couldn't grade your solution in time, so your ${refund.refunded} CC entry has been refunded. Give it another go.`,
+      minted: 0,
+      totalReward: 0,
+      maxDc: cap,
+      done: true,
+      refunded: { mode: refund.mode, fee: refund.refunded },
+    };
+  }
+
+  const { mark, feedback, breakdown } = graded;
   const reward = round2((mark / 10) * cap);
   let minted = 0;
   if (reward > 0) {

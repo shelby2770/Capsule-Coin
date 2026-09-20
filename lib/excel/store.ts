@@ -2333,6 +2333,45 @@ export async function spendGamePlay(
 }
 
 /**
+ * Reverse ONE game entry — the compensating action when a play can't be completed
+ * (e.g. the AI grader timed out). Mirrors spendGamePlay: a free (tier 0) entry
+ * returns the shared free play (so the member can spend it elsewhere today); a
+ * paid entry credits the tier fee back to CC via an ADJUST row. Idempotency is the
+ * caller's responsibility (close the session so it can't refund twice).
+ */
+export async function refundGamePlay(
+  actor: { email: string; name: string },
+  tier: number,
+  label: string,
+): Promise<{ mode: "free" | "paid"; refunded: number; balance: number }> {
+  return mutate((draft) => {
+    const me = ensureMemberDraft(draft, actor.email, actor.name);
+    applyDailyReset(me, Date.now());
+
+    if (tier <= 0) {
+      // Give back today's shared free play (floor at 0 — a day rollover already
+      // reset it, in which case there's nothing to return).
+      me.freeMinesUsed = Math.max(0, me.freeMinesUsed - 1);
+      return { mode: "free", refunded: 0, balance: round2(me.balance) };
+    }
+
+    const fee = config.games.tierFees[tier - 1] ?? 0;
+    if (fee > 0) {
+      me.balance = round2(me.balance + fee);
+      appendTransaction(draft, {
+        type: "ADJUST",
+        fromEmail: null,
+        toEmail: me.email,
+        amountCC: fee,
+        offerId: null,
+        memo: `Refunded ${fee} CC — ${label} couldn't be graded (tier ${tier})`,
+      });
+    }
+    return { mode: "paid", refunded: fee, balance: round2(me.balance) };
+  });
+}
+
+/**
  * Mint DC for a game win, capped at the shared mining reserve (so games + mining
  * can never exceed supplyCap). Records a GAME/DC transaction. A banned member
  * can't receive DC (same rule as PURCHASE).

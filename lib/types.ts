@@ -369,6 +369,7 @@ export type ProblemSubmitResult = {
   totalReward: number; // DC on this entry
   maxDc: number; // the tier cap the mark was scaled against
   done: boolean;
+  refunded?: { mode: "free" | "paid"; fee: number }; // set when grading failed and the entry was returned
 };
 
 /** Copy-guard tally response — the server bans once the copied fraction crosses the ratio. */
