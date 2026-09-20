@@ -82,7 +82,39 @@ async function ensureTabs(sheets: sheets_v4.Sheets, titles: string[]) {
 
 type Cell = string | number | boolean | null;
 
-const TAB_ORDER = ["Value", "Members", "Mining", "Transactions", "Requests"];
+// The four arcade games each get their own tab (like Mining), fed by the GAME
+// reward txns that belong to them. A game is identified from the win memo (all
+// wins share tx type GAME), so no ledger change is needed for this read-only view.
+const GAME_TABS = [
+  { title: "Guess the Word", match: "word game" },
+  { title: "Type Racing", match: "type race" },
+  { title: "Problem Solving", match: "Problem Solving" },
+  { title: "AI Blitz", match: "AI Blitz" },
+] as const;
+
+/** Which game a GAME reward txn belongs to (by its memo), or null if unknown. */
+function gameTabFor(memo: string): string | null {
+  const m = memo || "";
+  return GAME_TABS.find((g) => m.includes(g.match))?.title ?? null;
+}
+
+const TAB_ORDER = [
+  "Value",
+  "Members",
+  "Mining",
+  ...GAME_TABS.map((g) => g.title),
+  "Transactions",
+  "Requests",
+];
+
+/**
+ * A1 range for a tab. Sheet names with spaces/punctuation must be single-quoted
+ * in A1 notation (e.g. 'Guess the Word'!A1); single words are left bare.
+ */
+function tabRange(title: string, cell?: string): string {
+  const name = /^[A-Za-z0-9]+$/.test(title) ? title : `'${title.replace(/'/g, "''")}'`;
+  return cell ? `${name}!${cell}` : name;
+}
 
 /**
  * Put our data tabs first and remove the empty default "Sheet1", so anyone
@@ -198,10 +230,29 @@ async function doSync(state: LedgerState): Promise<void> {
       ]),
   ];
 
+  // Each arcade game gets its own tab (like Mining): its GAME reward txns, routed
+  // by memo. These are excluded from Transactions and projected here instead.
+  const gameRows = (title: string): Cell[][] => [
+    ["Seq", "Player", "Amount", "Currency", "Memo", "Created (UTC+6)", "Hash"],
+    ...state.transactions
+      .filter((t) => t.type === "GAME" && gameTabFor(t.memo) === title)
+      .map((t): Cell[] => [
+        t.seq,
+        nameOf(t.toEmail),
+        t.amountCC,
+        t.currency,
+        t.memo,
+        bdt(t.createdAt),
+        t.hash,
+      ]),
+  ];
+
   const txRows: Cell[][] = [
     ["Seq", "Type", "Currency", "From", "To", "Amount", "Memo", "Created (UTC+6)", "Hash"],
     ...state.transactions
-      .filter((t) => t.type !== "MINE")
+      // MINE and each game's GAME wins live in their own tabs; keep an unclassified
+      // GAME tx here (defensive) so nothing silently disappears from the mirror.
+      .filter((t) => t.type !== "MINE" && !(t.type === "GAME" && gameTabFor(t.memo)))
       .map((t): Cell[] => [
         t.seq,
         t.type,
@@ -230,24 +281,25 @@ async function doSync(state: LedgerState): Promise<void> {
     ]),
   ];
 
-  // Batch all four tabs into TWO API calls (one clear + one write) instead of
-  // eight (4× clear + update). Same result, ~4× fewer Sheets write requests per
-  // sync — far more headroom under the 60-writes/min quota. batchClear handles
-  // shrinking tabs so no stale rows are left behind.
+  // Batch every tab into TWO API calls (one clear + one write) instead of one
+  // pair per tab. Same result, far fewer Sheets write requests per sync — more
+  // headroom under the 60-writes/min quota. batchClear handles shrinking tabs so
+  // no stale rows are left behind. (Tab names with spaces are quoted in A1.)
   await sheets.spreadsheets.values.batchClear({
     spreadsheetId: SHEET_ID,
-    requestBody: { ranges: TAB_ORDER },
+    requestBody: { ranges: TAB_ORDER.map((t) => tabRange(t)) },
   });
   await sheets.spreadsheets.values.batchUpdate({
     spreadsheetId: SHEET_ID,
     requestBody: {
       valueInputOption: "RAW",
       data: [
-        { range: "Value!A1", values: valueRows },
-        { range: "Members!A1", values: memberRows },
-        { range: "Mining!A1", values: mineRows },
-        { range: "Transactions!A1", values: txRows },
-        { range: "Requests!A1", values: reqRows },
+        { range: tabRange("Value", "A1"), values: valueRows },
+        { range: tabRange("Members", "A1"), values: memberRows },
+        { range: tabRange("Mining", "A1"), values: mineRows },
+        ...GAME_TABS.map((g) => ({ range: tabRange(g.title, "A1"), values: gameRows(g.title) })),
+        { range: tabRange("Transactions", "A1"), values: txRows },
+        { range: tabRange("Requests", "A1"), values: reqRows },
       ],
     },
   });

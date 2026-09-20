@@ -100,6 +100,20 @@ export const config = {
     fruitMinisterEmail:
       process.env.FRUIT_MINISTER_EMAIL || "jakir.hossen@orbitax.com",
   },
+  // OpenRouter — the LLM backend for arcade games that need a model: grading the
+  // Problem-Solving submissions, and (optionally) generating fresh AI Blitz MCQs.
+  // Server-only. The key is YOUR OWN (set OPENROUTER_API_KEY in .env.local / the
+  // deploy env) — when it's blank, those features return a clear "not configured"
+  // error instead of calling out. The model is overridable per deployment.
+  openrouter: {
+    apiKey: process.env.OPENROUTER_API_KEY || "",
+    model: process.env.OPENROUTER_MODEL || "deepseek/deepseek-v4-flash",
+    baseUrl: process.env.OPENROUTER_BASE_URL || "https://openrouter.ai/api/v1",
+    // Attribution headers OpenRouter recommends (harmless if the app isn't public).
+    appUrl: process.env.OPENROUTER_APP_URL || "https://capsule-coin.vercel.app",
+    appTitle: "Capsule Coin Arcade",
+    timeoutMs: num(process.env.OPENROUTER_TIMEOUT_MS, 30_000),
+  },
   // Arcade — earn DC through mini-games (word guessing, type racing) alongside
   // mining. Wins mint DC (tx type GAME) against the SAME fixed mining reserve
   // (config.mining.supplyCap), so total DC inflation stays bounded. A paid entry
@@ -134,29 +148,47 @@ export const config = {
       // "Normal" seconds per attempt. If the solve took longer than
       // secPerAttempt × attempts, the reward scales by expected/elapsed, floored
       // at timeFloor (so unusually slow play earns less).
-      secPerAttempt: num(process.env.GAMES_WORD_SEC_PER_ATTEMPT, 20),
+      secPerAttempt: num(process.env.GAMES_WORD_SEC_PER_ATTEMPT, 30),
       timeFloor: num(process.env.GAMES_WORD_TIME_FLOOR, 0.1),
       // Per-tier reward multiplier [free, t1, t2, t3] applied on top of the
       // base (attempts × time) reward — paid tiers pay proportionally more.
       tierRewardMult: [
         num(process.env.GAMES_WORD_MULT_FREE, 1),
-        num(process.env.GAMES_WORD_MULT_T1, 1),
-        num(process.env.GAMES_WORD_MULT_T2, 1),
-        num(process.env.GAMES_WORD_MULT_T3, 1),
+        num(process.env.GAMES_WORD_MULT_T1, 1.5),
+        num(process.env.GAMES_WORD_MULT_T2, 2),
+        num(process.env.GAMES_WORD_MULT_T3, 3),
       ] as ReadonlyArray<number>,
-      // A word session self-ends this many seconds after it starts. The on-screen
-      // clock keeps running across leave/return; when it hits the cap the session
-      // closes and DC earned so far is finalized.
-      sessionTtlSec: num(process.env.GAMES_WORD_SESSION_TTL_SEC, 600),
+      // A word session self-ends after this many seconds, PER TIER [free,1,2,3].
+      // The on-screen clock keeps running across leave/return; when it hits the
+      // tier's cap the session closes and DC earned so far is finalized. Higher
+      // tiers get more time for their extra words.
+      sessionTtlSec: [
+        num(process.env.GAMES_WORD_TTL_FREE, 180), // free — 3 min
+        num(process.env.GAMES_WORD_TTL_T1, 300), // tier 1 — 5 min
+        num(process.env.GAMES_WORD_TTL_T2, 600), // tier 2 — 10 min
+        num(process.env.GAMES_WORD_TTL_T3, 1200), // tier 3 — 20 min
+      ] as ReadonlyArray<number>,
     },
     type: {
-      // Reward by net WPM = baseReward at baseWpm, halving each stepWpm below it,
-      // to 0 below minWpm. maxWpm is an anti-cheat sanity ceiling (paste guard).
+      // Reward by net WPM = baseReward at baseWpm, halving each stepWpm below it —
+      // continuously down toward 0 WPM (no hard floor; slower just earns far less).
+      // maxWpm is an anti-cheat sanity ceiling (paste guard).
       baseReward: num(process.env.GAMES_TYPE_BASE_REWARD, 100),
       baseWpm: num(process.env.GAMES_TYPE_BASE_WPM, 100),
       stepWpm: num(process.env.GAMES_TYPE_STEP_WPM, 10),
-      minWpm: num(process.env.GAMES_TYPE_MIN_WPM, 40),
       maxWpm: num(process.env.GAMES_TYPE_MAX_WPM, 220),
+      // A "get ready" breather: the passage is shown but the clock (and the reward
+      // timer) only start after this many seconds, so reading/settling isn't timed.
+      countdownSec: num(process.env.GAMES_TYPE_COUNTDOWN_SEC, 5),
+      // Per-tier reward multiplier [free, t1, t2, t3] applied on top of the WPM
+      // reward — paid tiers pay proportionally more (a paste-proof WPM cap still
+      // limits the base, so this is the main lever that makes paid entries worth it).
+      tierRewardMult: [
+        num(process.env.GAMES_TYPE_MULT_FREE, 1),
+        num(process.env.GAMES_TYPE_MULT_T1, 3),
+        num(process.env.GAMES_TYPE_MULT_T2, 7),
+        num(process.env.GAMES_TYPE_MULT_T3, 10),
+      ] as ReadonlyArray<number>,
       // Paragraph difficulty per tier [free, t1, t2, t3]. Pool docs are d1..d5
       // (higher = harder); free tier gets the hardest, paid tiers get easier.
       tierDifficulty: [
@@ -175,6 +207,52 @@ export const config = {
         num(process.env.GAMES_TYPE_REATTEMPTS_T2, 2),
         num(process.env.GAMES_TYPE_REATTEMPTS_T3, 3),
       ] as ReadonlyArray<number>,
+    },
+    // Problem Solving — a LeetCode-style problem, graded out of 10 by the LLM
+    // (config.openrouter). DC = (mark / 10) × the tier's cap. Free + Tier 1 only
+    // for now (maxDc.length gates which tiers exist); Tier 2 (topic pick) + Tier 3
+    // come later. Copy-guarding the statement is best-effort: selecting + copying a
+    // large fraction of it trips a temporary, game-scoped ban.
+    problem: {
+      // Seconds to solve one problem — server-anchored; auto-submits at zero.
+      secToSolve: num(process.env.GAMES_PROBLEM_SEC, 300), // 5 minutes
+      // Max DC per tier [free, t1]. The grader returns a mark 0–10; the award is
+      // (mark / 10) × this cap. The array length also defines which tiers exist —
+      // tier index ≥ maxDc.length is "coming soon" (Tier 2/3 aren't live yet).
+      maxDc: [
+        num(process.env.GAMES_PROBLEM_MAXDC_FREE, 10),
+        num(process.env.GAMES_PROBLEM_MAXDC_T1, 50),
+      ] as ReadonlyArray<number>,
+      // Copy-guard: cumulatively selecting + copying at least this fraction of the
+      // statement trips the ban (0.8 = 80%).
+      copyBanRatio: num(process.env.GAMES_PROBLEM_COPY_RATIO, 0.8),
+      // Days a copy-cheat ban locks Problem Solving (this game only, not the account).
+      banDays: num(process.env.GAMES_PROBLEM_BAN_DAYS, 3),
+      // The FREE tier draws from its own dedicated bucket (problemPool/<freeKey>) —
+      // a fixed curated set, separate from the paid topic banks. It's intentionally
+      // NOT one of `topics`, so it never shows in the paid topic picker.
+      freeKey: process.env.GAMES_PROBLEM_FREE_KEY || "free",
+      // Topic buckets for the PAID pool + the Tier-1 topic picker. Paid problems
+      // are a harder, topic-organized vault (see scripts/game-seed/problems.json).
+      topics: [
+        "arrays",
+        "strings",
+        "graphs",
+        "number-theory",
+        "geometry",
+        "dp",
+      ] as ReadonlyArray<string>,
+    },
+    // AI Blitz — a rapid-fire AI/ML MCQ round: `questionCount` questions,
+    // `secPerQuestion` seconds each, 1 mark apiece, free tier only. DC =
+    // correct × dcPerCorrect (max = questionCount × dcPerCorrect). Hybrid sourcing:
+    // draw from the seeded MCQ pool now; flip liveGen on to generate fresh
+    // questions via OpenRouter instead (wired, off by default).
+    blitz: {
+      questionCount: num(process.env.GAMES_BLITZ_COUNT, 5),
+      secPerQuestion: num(process.env.GAMES_BLITZ_SEC, 30),
+      dcPerCorrect: num(process.env.GAMES_BLITZ_DC_PER_CORRECT, 1),
+      liveGen: (process.env.GAMES_BLITZ_LIVEGEN || "false").toLowerCase() === "true",
     },
   },
   // Marketplace offers auto-expire (and are deleted) once they're older than this

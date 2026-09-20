@@ -33,6 +33,7 @@ export async function GET(req: Request) {
       graceUntil: m.graceUntil,
       banned: m.banned,
       onboardedAt: m.onboardedAt,
+      arcadeOnboardedAt: m.arcadeOnboardedAt,
     },
   });
 }

@@ -4,7 +4,6 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { AppShell } from "@/components/AppShell";
 import { useAuth } from "@/components/AuthProvider";
-import { DarkCoinLogo } from "@/components/DarkCoinLogo";
 import { formatDC } from "@/lib/format";
 import type { ArcadeStatus } from "@/lib/types";
 import {
@@ -12,10 +11,12 @@ import {
   Pickaxe,
   Puzzle,
   Keyboard,
+  Code2,
+  Zap,
   Vault,
   ArrowRight,
   Play,
-  Loader2,
+  Layers,
 } from "lucide-react";
 
 function fmtCountdown(ms: number): string {
@@ -96,8 +97,9 @@ function Arcade() {
         </div>
       )}
 
-      {/* game cards */}
-      <div className="grid gap-4 sm:grid-cols-3">
+      {/* game cards — 6-col track so each card spans 2; the 4th card starts at
+          column 2 so the final row of two (Problem Solving + AI Blitz) centers. */}
+      <div className="grid gap-4 sm:grid-cols-6">
         <GameCard
           href="/mine"
           icon={Pickaxe}
@@ -106,6 +108,7 @@ function Arcade() {
           freeLeft={freeLeft}
           resume={false}
           meta=""
+          className="sm:col-span-2"
         />
         <GameCard
           href="/arcade/word"
@@ -114,7 +117,8 @@ function Arcade() {
           blurb="Wordle-style. Solve fast and in few tries for the biggest DC."
           freeLeft={freeLeft}
           resume={status?.resumable?.kind === "word"}
-          meta=""
+          meta={status ? `${status.wordsRemaining.toLocaleString()} words left` : ""}
+          className="sm:col-span-2"
         />
         <GameCard
           href="/arcade/type"
@@ -123,7 +127,28 @@ function Arcade() {
           blurb="Type a passage cleanly and fast. Faster = more DC."
           freeLeft={freeLeft}
           resume={status?.resumable?.kind === "type"}
-          meta=""
+          meta={status ? `${status.paragraphsRemaining.toLocaleString()} passages` : ""}
+          className="sm:col-span-2"
+        />
+        <GameCard
+          href="/arcade/problem"
+          icon={Code2}
+          title="Problem Solving"
+          blurb="Crack a LeetCode-style problem in 5 min. An AI judge scores it for DC."
+          freeLeft={freeLeft}
+          resume={false}
+          meta={status ? `${status.problemsRemaining.toLocaleString()} problems` : ""}
+          className="sm:col-span-2 sm:col-start-2"
+        />
+        <GameCard
+          href="/arcade/blitz"
+          icon={Zap}
+          title="AI Blitz"
+          blurb="Rapid-fire AI/ML MCQs — 20s each. Every correct answer forges DC."
+          freeLeft={freeLeft}
+          resume={false}
+          meta={status ? `${status.mcqRemaining.toLocaleString()} questions` : ""}
+          className="sm:col-span-2"
         />
       </div>
 
@@ -161,6 +186,7 @@ function GameCard({
   meta,
   freeLeft,
   resume,
+  className,
 }: {
   href: string;
   icon: React.ComponentType<{ size?: number; className?: string }>;
@@ -169,11 +195,14 @@ function GameCard({
   meta: string;
   freeLeft: number;
   resume: boolean;
+  className?: string;
 }) {
   return (
     <Link
       href={href}
-      className="dc-card group flex flex-col p-5 transition hover:border-ember-500/40"
+      className={`dc-card group flex flex-col p-5 transition hover:border-ember-500/40${
+        className ? ` ${className}` : ""
+      }`}
     >
       <div className="flex items-center justify-between">
         <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-ember-500/15 text-ember-400">
@@ -194,7 +223,7 @@ function GameCard({
       <div className="mt-3 flex items-center justify-between text-[11px] text-mute">
         {meta ? (
           <span className="inline-flex items-center gap-1">
-            <DarkCoinLogo size={12} /> {meta}
+            <Layers size={12} className="text-mute" /> {meta}
           </span>
         ) : (
           <span />

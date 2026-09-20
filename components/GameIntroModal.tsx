@@ -2,16 +2,27 @@
 
 import { useState } from "react";
 import { ArrowLeft, ArrowRight, Loader2, Check } from "lucide-react";
+import { formatCC } from "@/lib/format";
 import { Portal } from "@/components/Portal";
 
 export type TierOption = {
   tier: number; // 0 = free, 1..3 = paid
   label: string; // e.g. "Free", "Tier 1"
-  cost: number; // CC fee (0 for free) — not surfaced in the modal, kept for callers
+  cost: number; // CC fee (0 for free) — shown on the tier button
   detail: string; // e.g. "3 words"
   disabled?: boolean;
   note?: string; // why it's disabled, or an extra hint
+  topics?: string[]; // when set, this tier makes the player pick one of these first
 };
+
+/** "number-theory" → "Number Theory", "dp" → "DP" for the topic chips. */
+function prettyTopic(t: string): string {
+  return t
+    .split(/[-_\s]+/)
+    .filter(Boolean)
+    .map((w) => (w.length <= 2 ? w.toUpperCase() : w.charAt(0).toUpperCase() + w.slice(1)))
+    .join(" ");
+}
 
 /**
  * The pre-game instructions popup (shown before every game). Explains the rules
@@ -38,7 +49,7 @@ export function GameIntroModal({
   defaultTier?: number;
   busy?: boolean;
   error?: string | null;
-  onContinue: (tier: number) => void;
+  onContinue: (tier: number, topic?: string) => void;
   onBack: () => void;
 }) {
   const firstEnabled = tiers.find((t) => !t.disabled)?.tier ?? 0;
@@ -46,6 +57,11 @@ export function GameIntroModal({
     ? defaultTier
     : firstEnabled;
   const [tier, setTier] = useState(initial);
+  const [topic, setTopic] = useState<string | undefined>(undefined);
+
+  const activeTopics = tiers.find((t) => t.tier === tier)?.topics ?? [];
+  const needsTopic = activeTopics.length > 0;
+  const canContinue = !busy && (!needsTopic || !!topic);
 
   return (
     <Portal>
@@ -84,7 +100,10 @@ export function GameIntroModal({
                     <button
                       key={t.tier}
                       disabled={t.disabled}
-                      onClick={() => setTier(t.tier)}
+                      onClick={() => {
+                        setTier(t.tier);
+                        setTopic(undefined);
+                      }}
                       className={`rounded-2xl border p-3 text-left transition disabled:cursor-not-allowed disabled:opacity-40 ${
                         active
                           ? "border-ember-500/60 bg-ember-500/10 shadow-glow-ember"
@@ -93,10 +112,36 @@ export function GameIntroModal({
                     >
                       <div className="flex items-center justify-between">
                         <span className="text-sm font-semibold text-white">{t.label}</span>
-                        {t.tier === 0 && <span className="text-xs text-ember-300">Free</span>}
+                        <span className="text-xs text-ember-300">
+                          {t.cost > 0 ? `${formatCC(t.cost)} CC` : "Free"}
+                        </span>
                       </div>
                       <div className="mt-0.5 text-xs text-mute">{t.detail}</div>
                       {t.note && <div className="mt-1 text-[11px] text-mute/80">{t.note}</div>}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {needsTopic && (
+            <div className="mt-4">
+              <div className="text-xs uppercase tracking-wider text-mute">Choose a topic</div>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {activeTopics.map((tp) => {
+                  const on = tp === topic;
+                  return (
+                    <button
+                      key={tp}
+                      onClick={() => setTopic(tp)}
+                      className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
+                        on
+                          ? "border-ember-500/60 bg-ember-500/15 text-ember-200"
+                          : "border-edge bg-ink-800/50 text-mute hover:border-ember-500/30 hover:text-white"
+                      }`}
+                    >
+                      {prettyTopic(tp)}
                     </button>
                   );
                 })}
@@ -116,8 +161,8 @@ export function GameIntroModal({
             </button>
             <button
               className="btn-ember dc-ring"
-              onClick={() => onContinue(tier)}
-              disabled={busy}
+              onClick={() => onContinue(tier, needsTopic ? topic : undefined)}
+              disabled={!canContinue}
             >
               {busy ? <Loader2 size={16} className="animate-spin" /> : <ArrowRight size={16} />}
               {busy ? "Starting…" : "Enter game"}

@@ -8,7 +8,7 @@ import {
   spendGamePlay,
   awardGameDc,
 } from "@/lib/excel/store";
-import { assertValidTier } from "@/lib/games/common";
+import { assertValidTier, type GameKind } from "@/lib/games/common";
 import { consumeWords } from "@/lib/games/pools";
 import {
   createSession,
@@ -60,9 +60,10 @@ function wordReward(attempts: number, elapsedSec: number, tier: number): number 
   return round2(base * timeFactor * mult);
 }
 
-/** Session lifespan in ms (the on-screen clock counts toward this). */
-function sessionTtlMs(): number {
-  return config.games.word.sessionTtlSec * 1000;
+/** Session lifespan in ms for a tier (the on-screen clock counts toward this). */
+function sessionTtlMs(tier: number): number {
+  const ttls = config.games.word.sessionTtlSec;
+  return (ttls[tier] ?? ttls[0]) * 1000;
 }
 
 /**
@@ -72,7 +73,7 @@ function sessionTtlMs(): number {
  */
 async function closeIfExpired(session: GameSession): Promise<boolean> {
   if (session.status !== "active") return false;
-  if (Date.now() <= session.createdAt + sessionTtlMs()) return false;
+  if (Date.now() <= session.createdAt + sessionTtlMs(session.tier)) return false;
   const words = session.words ?? [];
   const cur = words[session.currentIndex ?? 0];
   if (cur && !cur.solved && !cur.failed) cur.failed = true;
@@ -126,7 +127,7 @@ export function assertCanStart(
  */
 export async function assertTierNotUsedToday(
   email: string,
-  kind: "word" | "type",
+  kind: GameKind,
   tier: number,
 ): Promise<void> {
   if (tier <= 0) return;
@@ -162,7 +163,7 @@ export function wordBoard(session: GameSession): WordBoard {
     totalReward: round2(session.totalReward),
     wordElapsedMs: cur && cur.servedAt ? Math.max(0, Date.now() - cur.servedAt) : 0,
     elapsedMs: Math.max(0, Date.now() - session.createdAt),
-    ttlMs: sessionTtlMs(),
+    ttlMs: sessionTtlMs(session.tier),
   };
 }
 

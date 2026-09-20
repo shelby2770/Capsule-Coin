@@ -1,0 +1,297 @@
+[
+  {
+    "topic": "langchain",
+    "question": "In LangChain, what is LCEL (LangChain Expression Language) mainly used for?",
+    "options": ["Indexing a vector database","Building a fine-tuning dataset","Composing chains with the pipe (|) operator","Caching prompts on disk"],
+    "answer": 2
+  },
+  {
+    "topic": "langgraph",
+    "question": "LangGraph models an agent workflow primarily as which structure?",
+    "options": ["A single linear prompt","A stateful graph of nodes and edges","A REST API schema","A SQL query plan"],
+    "answer": 1
+  },
+  {
+    "topic": "langsmith",
+    "question": "What is LangSmith mainly used for?",
+    "options": ["Training base models from scratch","Serving static websites","Managing Kubernetes clusters","Tracing, debugging, and evaluating LLM apps"],
+    "answer": 3
+  },
+  {
+    "topic": "rag",
+    "question": "In Retrieval-Augmented Generation (RAG), what does the retrieval step provide to the model?",
+    "options": ["Relevant external context to ground the answer","A larger context window automatically","Updated model weights","A lower temperature setting"],
+    "answer": 0
+  },
+  {
+    "topic": "rag",
+    "question": "Which technique most directly reduces hallucination by grounding answers in a knowledge source?",
+    "options": ["Dropout","Batch normalization","RAG (retrieval-augmented generation)","Beam search"],
+    "answer": 2
+  },
+  {
+    "topic": "embeddings",
+    "question": "What does a text embedding represent?",
+    "options": ["A compressed image file","A numeric vector capturing semantic meaning","A single database row","An HTTP header"],
+    "answer": 1
+  },
+  {
+    "topic": "agents",
+    "question": "In an agentic system, 'tool calling' (function calling) lets the LLM do what?",
+    "options": ["Retrain itself","Increase its parameter count","Bypass its context window","Invoke external functions/APIs with structured arguments"],
+    "answer": 3
+  },
+  {
+    "topic": "llm",
+    "question": "The 'temperature' parameter of an LLM controls what?",
+    "options": ["Randomness/creativity of the output","The GPU clock speed","The size of the context window","The number of tokens billed"],
+    "answer": 0
+  },
+  {
+    "topic": "infra",
+    "question": "Which of these is a vector database commonly used in LLM applications?",
+    "options": ["Redux","Webpack","Pinecone","Nginx"],
+    "answer": 2
+  },
+  {
+    "topic": "rag",
+    "question": "What is 'chunking' in a RAG pipeline?",
+    "options": ["Merging several models together","Splitting documents into smaller passages before embedding","Quantizing model weights","Rate-limiting requests"],
+    "answer": 1
+  },
+  {
+    "topic": "mcp",
+    "question": "The Model Context Protocol (MCP) standardizes what?",
+    "options": ["How applications expose tools, data, and context to LLMs","How GPUs share memory","How CSS is bundled","How Git branches merge"],
+    "answer": 0
+  },
+  {
+    "topic": "prompting",
+    "question": "In prompt engineering, what does 'few-shot' prompting mean?",
+    "options": ["Using a smaller model","Limiting the output length","Disabling the system prompt","Including a few worked examples in the prompt"],
+    "answer": 3
+  },
+  {
+    "topic": "llm",
+    "question": "What does fine-tuning a model do?",
+    "options": ["Only changes the prompt at inference","Further trains it on task-specific data","Compresses the model to disk","Attaches a vector store"],
+    "answer": 1
+  },
+  {
+    "topic": "swe-ai",
+    "question": "GitHub Copilot is best described as which of the following?",
+    "options": ["A CI/CD pipeline","A container registry","An AI pair-programmer that suggests code","A database ORM"],
+    "answer": 2
+  },
+  {
+    "topic": "llm",
+    "question": "What is an LLM's 'context window'?",
+    "options": ["The maximum number of tokens it can consider at once","The size of the chat UI box","The number of training epochs","The number of tools it has access to"],
+    "answer": 0
+  },
+  {
+    "topic": "prompting",
+    "question": "'Chain-of-thought' prompting improves reasoning by doing what?",
+    "options": ["Lowering temperature to 0","Using more GPUs","Shortening the prompt","Asking the model to reason step by step"],
+    "answer": 3
+  },
+  {
+    "topic": "langgraph",
+    "question": "In LangGraph, what typically flows between nodes and is updated as the graph runs?",
+    "options": ["A CSS stylesheet","A shared state object","A Docker image","A raw TCP socket"],
+    "answer": 1
+  },
+  {
+    "topic": "rag",
+    "question": "What does the abbreviation 'RAG' stand for?",
+    "options": ["Retrieval-Augmented Generation","Recurrent Attention Gate","Random Access Gradient","Rapid API Gateway"],
+    "answer": 0
+  },
+  {
+    "topic": "embeddings",
+    "question": "Which statement best describes an embedding model?",
+    "options": ["It renders HTML","It schedules cron jobs","It maps text to vectors for similarity search","It compiles TypeScript"],
+    "answer": 2
+  },
+  {
+    "topic": "agents",
+    "question": "An 'AI agent' differs from a plain chatbot mainly because it can do what?",
+    "options": ["Only answer a single question","Run without any model","Store nothing between turns","Plan and take actions using tools in a loop"],
+    "answer": 3
+  },
+  {
+    "topic": "LangGraph & Orchestration",
+    "question": "When implementing a Human-in-the-Loop workflow in LangGraph using `MemorySaver`, how does the graph typically resume execution after being paused by an `interrupt_before` node without modifying the state?\n\nconfig = {\"configurable\": {\"thread_id\": \"user_123\"}}\ngraph.invoke(???, config)",
+    "options": ["By invoking the graph again with the original input dictionary.","By invoking the graph with `None` as the input payload.","By calling the `graph.resume(config)` method directly.","By passing a special `ResumeNode()` object to the invoke method."],
+    "answer": 1,
+    "explanation": "In LangGraph, breakpoints stop execution before or after a node. Resuming the graph without adding new input requires running it with `None` and the exact same thread configuration. Passing `None` as the input tells LangGraph to pick up execution from the last saved state in the checkpoint."
+  },
+  {
+    "topic": "LangGraph & Orchestration",
+    "question": "In LangGraph, a conditional edge function routes the execution flow based on the current state. If the function returns a list of strings instead of a single string, what happens during execution?\n\ndef route_logic(state):\n    return [\"node_b\", \"node_c\"]",
+    "options": ["The graph sequentially executes `node_b` followed by `node_c`.","The graph throws a `GraphRoutingError` because conditional edges must return exactly one destination.","The graph executes `node_b` and `node_c` in parallel, fanning out the state.","The graph treats `node_c` as a fallback if `node_b` encounters an exception."],
+    "answer": 2,
+    "explanation": "LangGraph supports dynamic parallel execution (fan-out) via conditional edges. Returning a list of node names from a routing function explicitly instructs LangGraph to route the current state to all those nodes simultaneously in parallel."
+  },
+  {
+    "topic": "LangGraph & Orchestration",
+    "question": "When composing a large LangGraph system by embedding a compiled 'child' graph as a node within a 'parent' graph, how are the state schemas of the parent and child managed?\n\nchild_graph = StateGraph(ChildState)\n# ... compile child_graph ...\n\nparent_graph = StateGraph(ParentState)\nparent_graph.add_node(\"child_process\", child_graph.compile())",
+    "options": ["The child graph strictly enforces isolation; you must use a `StateMapper` to translate the parent state to the child state.","The parent state automatically injects itself into the child, and the child's output is merged back using the parent's reducer logic.","The child graph overwrites the parent's state entirely, resetting any unshared keys.","Child graphs cannot be added as nodes directly; they must be triggered asynchronously via a Tool Call."],
+    "answer": 1,
+    "explanation": "LangGraph allows compiled graphs to act as Runnables, making them directly composable as nodes in other graphs. When a child graph is invoked as a node, it receives the parent's state. As long as the keys align, its output updates the parent state seamlessly using the defined reducers."
+  },
+  {
+    "topic": "LangGraph & Orchestration",
+    "question": "What is the architectural purpose of attaching a reducer function (like `operator.add`) to a field in a LangGraph `TypedDict` state schema?\n\nfrom typing import Annotated\nimport operator\n\nclass AgentState(TypedDict):\n    messages: Annotated[list, operator.add]",
+    "options": ["To compress the state object size before saving it to Postgres or SQLite.","To ensure that concurrent node executions are locked sequentially to prevent race conditions.","To dictate how new values returned by nodes should be combined with the existing state, rather than overwriting it.","To automatically serialize complex objects into string formats for LLM context windows."],
+    "answer": 2,
+    "explanation": "Reducers define state transition logic. By default, LangGraph overwrites state keys with new values returned by nodes. The `operator.add` reducer tells the graph to append new items to the existing list (e.g., adding a new chat message) instead of replacing the entire list of messages."
+  },
+  {
+    "topic": "LangChain Core",
+    "question": "Consider the following LCEL (LangChain Expression Language) expression. What will be the exact format of the input passed into `task3`?\n\nchain = RunnableParallel(a=task1, b=task2) | task3\nchain.invoke({\"input\": \"test\"})",
+    "options": ["A list containing the outputs of task1 and task2: `[output1, output2]`","A dictionary mapping the keys to their outputs: `{\"a\": output1, \"b\": output2}`","A concatenated string of both outputs.","The output of whichever task (task1 or task2) completes execution first."],
+    "answer": 1,
+    "explanation": "RunnableParallel executes multiple runnables concurrently and aggregates their outputs into a dictionary. The kwargs provided to `RunnableParallel` become the keys of a dictionary, where the values are the resolved outputs of the respective runnables."
+  },
+  {
+    "topic": "LangChain Core",
+    "question": "When utilizing `llm.bind_tools([my_tool])` on a compatible Chat Model in LangChain, how does the framework capture and return the model's decision to execute a tool?\n\nllm_with_tools = llm.bind_tools([weather_tool])\nresponse = llm_with_tools.invoke(\"What is the weather in Tokyo?\")",
+    "options": ["The response is a standard `AIMessage` with the tool execution command embedded in the `content` field as a JSON string.","The response is an `AIMessage` where the `tool_calls` attribute is populated with a list of dictionaries containing the tool name and arguments.","The response is automatically converted into a `ToolMessage` indicating the tool must be run.","The `invoke` method directly executes the tool and returns the tool's raw output instead of an LLM message."],
+    "answer": 1,
+    "explanation": "Tool binding in modern LangChain normalizes the various provider tool-calling APIs into a consistent message structure. LangChain intercepts the provider's specific tool-calling response and standardizes it into the `tool_calls` attribute of an `AIMessage`."
+  },
+  {
+    "topic": "LangChain Core",
+    "question": "When creating a custom Python generator function to process a stream within an LCEL pipeline, what is the required signature and structure to ensure streaming works correctly?\n\nchain = prompt | model | my_generator",
+    "options": ["It must take a single input string and return an `asyncio.Queue` of output chunks.","It must take an Iterator/AsyncIterator of input chunks and `yield` output chunks one by one.","It must be decorated with `@chain` and return a flattened list of all chunks.","It must implement a `stream()` method that returns an active WebSocket connection."],
+    "answer": 1,
+    "explanation": "LCEL streams data through components seamlessly. For a custom function to maintain a stream, it must act as a generator that processes an iterable. In a streaming LCEL pipeline, custom functions receive an iterator of the chunks yielded by the previous step (e.g., the model) and must use `yield` to stream their processed outputs downstream."
+  },
+  {
+    "topic": "LangChain Core",
+    "question": "When implementing a custom output parser that inherits from `BaseOutputParser` in LangChain, which internal method must be overridden to support streaming partial parse results?",
+    "options": ["`parse()`","`transform()`","`_stream_parse()`","`invoke()`"],
+    "answer": 1,
+    "explanation": "Output Parsers in LangChain are Runnables. To support streaming parsing (where parts of the structured output are yielded as they arrive), specific methods must be used. The `transform()` method is the standard Runnable interface for transforming a stream of inputs (an iterator of chunks) into a stream of outputs."
+  },
+  {
+    "topic": "Agent Protocols & Frameworks",
+    "question": "In the Model Context Protocol (MCP) architecture, what is the exact role of an 'MCP Client'?",
+    "options": ["To host the weights of an open-source LLM and serve inference endpoints.","To act as a central registry that stores API keys securely for all external tools.","To maintain connections with MCP Servers and route data/tool requests between the AI application and those servers.","To automatically execute Docker containers safely when LLMs write raw Python code."],
+    "answer": 2,
+    "explanation": "The Model Context Protocol standardizes how AI applications connect to external data and tools. An MCP Client sits within the AI application (like Claude Desktop). It initiates 1:1 connections with MCP Servers, routing prompts, resource reads, and tool calls."
+  },
+  {
+    "topic": "Agent Protocols & Frameworks",
+    "question": "Which two transport mechanisms are officially supported in the foundational Model Context Protocol specification for Client-Server communication?",
+    "options": ["gRPC and WebRTC","Standard Input/Output (stdio) and Server-Sent Events (SSE) over HTTP","WebSocket (WS) and GraphQL","TCP Sockets and UDP"],
+    "answer": 1,
+    "explanation": "MCP defines standard transports to ensure universal compatibility between diverse AI clients and resource servers. The specification explicitly relies on `stdio` for local processes (like command-line tools) and `SSE` (Server-Sent Events) with HTTP POST for remote network communication."
+  },
+  {
+    "topic": "Agent Protocols & Frameworks",
+    "question": "In a multi-agent LangGraph system utilizing a supervisor architecture, what is the most robust and idiomatic mechanism for a worker agent to hand off control back to the supervisor?",
+    "options": ["Raising a `HandoffException` that the supervisor catches in a global try/except block.","Invoking the supervisor's `invoke()` method directly from within the worker's tool.","Returning a specific state update (e.g., updating a `next_agent` routing key) that the graph's conditional edges evaluate.","Terminating the process thread and letting the supervisor's health-check daemon restart the workflow."],
+    "answer": 2,
+    "explanation": "Agent orchestration relies on state transitions rather than direct imperative function calls to maintain checkpointing and observability. In LangGraph, handoffs are elegantly handled by updating a routing variable in the shared state schema. A conditional edge then reads this state and routes the graph flow back to the supervisor node."
+  },
+  {
+    "topic": "Structured Outputs & Guardrails",
+    "question": "When enforcing strict JSON schemas using LangChain's `with_structured_output`, how does the framework behave by default if the LLM returns JSON that fails Pydantic schema validation (assuming no explicit retry logic is configured)?",
+    "options": ["It automatically amends the system prompt and retries the request up to 3 times.","It immediately raises a `ValidationError` or `OutputParserException`, crashing the chain.","It returns a partial dictionary containing only the fields that passed validation.","It falls back to returning the raw string output generated by the LLM."],
+    "answer": 1,
+    "explanation": "Structured output parsers enforce strict typing. Without explicit fallback or retry logic, failure to meet the schema is treated as an error. By default, `with_structured_output` will parse the response through Pydantic. If validation fails, it throws a Python exception immediately, halting execution."
+  },
+  {
+    "topic": "Structured Outputs & Guardrails",
+    "question": "When utilizing OpenAI's `strict: true` flag for Structured Outputs in function calling, which standard JSON Schema/Pydantic feature is explicitly unsupported?",
+    "options": ["Nested objects and arrays.","Fields lacking a default value.","Optional fields (using `typing.Optional`) where `null` is not explicitly allowed in the required array.","Any fields not explicitly listed in the 'required' array of the JSON Schema."],
+    "answer": 3,
+    "explanation": "OpenAI's strict Structured Outputs ensure 100% schema adherence but impose severe restrictions on the JSON Schema dialect used. Under `strict: true`, OpenAI requires all properties in the schema to be explicitly listed in the `required` array. You cannot have optional fields in the schema unless they are marked as required but allow a `null` type."
+  },
+  {
+    "topic": "Structured Outputs & Guardrails",
+    "question": "When utilizing few-shot prompting to force an LLM to generate complex structured outputs, what is the most robust way to provide the examples in LangChain?",
+    "options": ["Writing a long narrative paragraph describing the ideal output format.","Injecting the raw Python source code of the Pydantic model directly into the prompt.","Using a `FewShotChatMessagePromptTemplate` with alternating Human and AI messages containing exact simulated inputs and valid JSON outputs.","Adding a `<schema>` XML tag containing generic regex patterns."],
+    "answer": 2,
+    "explanation": "Few-shot prompting relies on pattern matching. LLMs perform best when they see exact examples of the expected interaction. Providing alternating Human/AI message turns trains the model on the exact conversational pattern and JSON structure it needs to produce, yielding the highest reliability."
+  },
+  {
+    "topic": "Advanced RAG & Vectors",
+    "question": "In a Hybrid Search RAG implementation, what is the primary function of the Reciprocal Rank Fusion (RRF) algorithm?",
+    "options": ["To combine and rerank results retrieved from both sparse (keyword) and dense (vector) searches based on their relative positional rankings.","To calculate the cosine similarity between the user's query vector and the document vectors.","To automatically adjust the text chunk size depending on the retrieval confidence score.","To merge overlapping document chunks back into a continuous text stream before passing to the LLM."],
+    "answer": 0,
+    "explanation": "Hybrid search queries multiple retrieval systems (like BM25 and Vector Search). Their results must be merged intelligently. RRF is a mathematical formula that normalizes and combines the rankings from different retriever algorithms, prioritizing documents that rank highly across multiple retrieval methods."
+  },
+  {
+    "topic": "Advanced RAG & Vectors",
+    "question": "Why is a Cross-Encoder typically deployed as a second-stage re-ranker in a RAG pipeline rather than the primary retrieval mechanism for a massive document corpus?",
+    "options": ["Cross-Encoders cannot output numerical similarity scores; they only output boolean classifications.","Cross-Encoders suffer from extremely small token context windows compared to Bi-Encoders.","Cross-Encoders require the query and each document to be processed simultaneously through the transformer, making pre-computation impossible and large-scale search computationally prohibitive.","Cross-Encoders rely purely on lexical BM25 matching, which lacks semantic understanding of the corpus."],
+    "answer": 2,
+    "explanation": "Cross-encoders yield highly accurate semantic similarity but are incredibly slow compared to bi-encoders. Bi-encoders allow document embeddings to be pre-computed and stored in a vector database. Cross-encoders evaluate the query and document together at runtime, meaning running it across millions of documents would take too much time and compute."
+  },
+  {
+    "topic": "Advanced RAG & Vectors",
+    "question": "Which of the following describes the primary architectural advantage of GraphRAG over standard vector-based RAG when a user asks a global query such as 'What are the overarching themes in this dataset?'",
+    "options": ["GraphRAG relies strictly on regex pattern matching, guaranteeing zero LLM hallucinations.","GraphRAG skips the retrieval phase entirely and loads the entire dataset into the LLM's context window.","GraphRAG pre-processes data by extracting entities and grouping them into hierarchical communities, allowing it to synthesize answers from aggregated summaries across disparate documents.","GraphRAG uses deterministic SQL queries instead of vector similarity, resulting in millisecond latency."],
+    "answer": 2,
+    "explanation": "Standard RAG struggles with global queries because top-K vector search only retrieves isolated, localized chunks of text. GraphRAG builds a knowledge graph from the documents, detects communities of related entities, and pre-generates summaries for those communities. This allows it to answer broad, thematic queries effectively."
+  },
+  {
+    "topic": "Observability & Evals",
+    "question": "In the context of AI Observability platforms like LangSmith, what distinguishes a 'Trace' from a 'Span'?",
+    "options": ["A Trace represents the full end-to-end execution of a workflow, while a Span represents a single, distinct operation or step within that Trace.","A Trace captures token consumption metrics, whereas a Span strictly captures time-based latency.","A Trace is used exclusively for debugging LLM inputs, while a Span logs database queries.","There is no functional difference; the terms are synonymous in OpenTelemetry standards."],
+    "answer": 0,
+    "explanation": "Tracing provides visibility into complex, multi-step LLM chains and agents. A Trace is the overarching record of a single request (e.g., a user query). A Span is a unit of work inside that Trace (e.g., a specific tool call, embedding generation, or LLM invocation)."
+  },
+  {
+    "topic": "Observability & Evals",
+    "question": "How does the 'Faithfulness' metric in the Ragas evaluation framework algorithmically determine its score?",
+    "options": ["By utilizing a Cross-Encoder to compute the cosine similarity between the user query and the final answer.","By employing an LLM to extract individual claims from the generated answer, and then verifying if each claim can be logically inferred from the retrieved context.","By comparing the generated answer against a human-provided 'Ground Truth' string using exact string matching.","By generating synthetic questions from the retrieved context and checking if the LLM can answer them."],
+    "answer": 1,
+    "explanation": "Faithfulness (or groundedness) measures whether the LLM hallucinated information outside the provided context. The Ragas Faithfulness metric uses an LLM-as-a-judge approach: it breaks the final answer down into atomic statements and checks if the retrieved context supports every single statement."
+  },
+  {
+    "topic": "Observability & Evals",
+    "question": "When evaluating an LLM application using the Ragas 'Answer Relevance' metric, which of the following scenarios would result in a heavily penalized (low) score?",
+    "options": ["The retrieved context is entirely unrelated to the user's query.","The model hallucinates a technically correct fact that was not present in the retrieved context.","The model provides an answer that is factually correct, but overly verbose and includes tangents unrelated to the actual user query.","The model refuses to answer due to a safety filter."],
+    "answer": 2,
+    "explanation": "Answer Relevance assesses how directly and concisely the generated answer addresses the user's original query, ignoring factual accuracy. If an answer includes information that does not help answer the specific query (even if factual), the Ragas algorithm (which reverse-engineers questions from the answer to compare with the original prompt) will detect a divergence, lowering the relevance score."
+  },
+  {
+    "topic": "LangGraph & Orchestration",
+    "question": "When invoking a compiled LangGraph graph with a `MemorySaver` checkpointer, what is required to correctly resume a specific conversation's state across multiple separate `.invoke()` calls?",
+    "options": ["Pass the same `thread_id` inside the `configurable` key of the `config` dict on every invocation; the checkpointer uses it to look up and restore that thread's saved state.","Nothing extra is needed — `MemorySaver` automatically infers which conversation to resume based on the content similarity of the incoming messages.","Re-instantiate a new `MemorySaver()` object before each invocation to force it to reload the latest checkpoint from disk.","Pass the entire prior state object manually as the `input` argument on every call, since checkpointers only persist graph structure, not state."],
+    "answer": 0,
+    "explanation": "LangGraph checkpointers persist graph state per \"thread\" so multi-turn or long-running executions can be paused and resumed. `config={\"configurable\": {\"thread_id\": \"abc\"}}` is the key a checkpointer (like `MemorySaver`) uses to save/load state; invoking with the same thread_id lets the graph continue from its last checkpoint without re-sending the full history."
+  },
+  {
+    "topic": "Agent Protocols & Frameworks",
+    "question": "Which statement correctly distinguishes MCP's three core server-side primitives?",
+    "options": ["Tools are model-controlled functions the LLM can invoke to take action or fetch data; Resources are application-controlled, addressable data (like files or API responses) the client can read; Prompts are user-controlled, reusable templates surfaced for the user to select.","Tools, Resources, and Prompts are interchangeable terms in the MCP spec that all resolve to the same JSON-RPC `tools/call` method under the hood.","Resources are executable functions with side effects; Tools are static, read-only text passed into context; Prompts are the system-level instructions injected automatically at connection time.","Prompts define the transport layer (stdio vs HTTP), Tools define authentication scopes, and Resources define the server's capability negotiation handshake."],
+    "answer": 0,
+    "explanation": "MCP defines three distinct primitives with different control models, deliberately separating \"what the model can do\" from \"what data is available\" from \"what the user can invoke.\" This control-model distinction (model-controlled Tools, application-controlled Resources, user-controlled Prompts) is exactly how the MCP specification frames the three primitives, and it determines how each is discovered and surfaced in a client."
+  },
+  {
+    "topic": "Structured Outputs & Guardrails",
+    "question": "An LLM occasionally returns JSON that fails Pydantic validation (e.g., missing a required field). What does LangChain's `RetryWithErrorOutputParser` do to fix this, distinct from simply discarding the bad output?",
+    "options": ["It re-invokes the LLM with a new prompt that includes both the original prompt/instructions and the raw malformed completion plus the validation error, asking the model to produce a corrected version — using the original context rather than the broken output alone.","It silently fills in missing required fields with `None` or empty defaults so validation always passes without another LLM call.","It discards the malformed response and immediately raises a hard exception, since retries are not supported for structured Pydantic outputs.","It switches the underlying model to a smaller, cheaper model on retry to save cost, assuming the failure was due to model capability."],
+    "answer": 0,
+    "explanation": "Retry parsers close the loop between \"the model produced invalid structured output\" and \"give the model enough context to fix it,\" rather than either failing hard or fabricating data. `RetryWithErrorOutputParser` specifically re-prompts using the original prompt context plus the completion and the parsing error, so the model can see exactly what it got wrong and self-correct — distinct from simpler retry approaches that only pass the error and prior completion without the original prompt."
+  },
+  {
+    "topic": "Structured Outputs & Guardrails",
+    "question": "A `FewShotPromptTemplate` is configured with a `SemanticSimilarityExampleSelector` backed by a vector store of 500 examples. What determines which examples get inserted into the final prompt at runtime?",
+    "options": ["The `k` most semantically similar examples to the current input, retrieved via embedding similarity search against the example vector store — not a fixed static subset.","A fixed, hardcoded subset of examples defined at template-creation time that never changes across different inputs.","The examples are chosen randomly each call to encourage diversity, regardless of the input's content.","All 500 examples are always included, and `SemanticSimilarityExampleSelector` only affects their display order in the prompt."],
+    "answer": 0,
+    "explanation": "`SemanticSimilarityExampleSelector` is the dynamic-example-selection mechanism designed to keep prompts short and relevant by choosing only the most on-topic few-shot examples per query. At runtime, the selector embeds the incoming input and does a similarity search against the example store, returning the top-`k` closest examples — different inputs pull different examples, which is the entire point of using it over a static `FewShotPromptTemplate`."
+  },
+  {
+    "topic": "Advanced RAG & Vectors",
+    "question": "What does wrapping a base retriever in a `ContextualCompressionRetriever` with an `LLMChainExtractor` accomplish?",
+    "options": ["It reduces the number of retrieved documents by lowering `k`, returning fewer but longer chunks.","For each retrieved document, it uses an LLM to extract only the sentences/portions relevant to the specific query, discarding irrelevant content from within each document before it reaches the final prompt.","It compresses the vector store itself by re-quantizing embeddings to a smaller bit-width, permanently shrinking storage size.","It merges all retrieved documents into a single summarized paragraph using extractive summarization unrelated to the query."],
+    "answer": 1,
+    "explanation": "Contextual compression targets token efficiency and precision by trimming irrelevant content out of already-retrieved documents, rather than changing how many documents are fetched or how the index is stored. `LLMChainExtractor` runs each retrieved document through an LLM chain that extracts only the query-relevant spans, so the final context passed to the generator is denser and less noisy — improving both cost and faithfulness without altering retrieval count."
+  }
+]

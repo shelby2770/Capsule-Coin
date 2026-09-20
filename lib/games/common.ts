@@ -19,13 +19,16 @@ const NS = rawDoc === "state" ? "" : `${rawDoc}__`;
 
 export const WORD_POOL = `${NS}wordPool`;
 export const PARAGRAPH_POOL = `${NS}paragraphPool`;
+export const PROBLEM_POOL = `${NS}problemPool`;
+export const MCQ_POOL = `${NS}mcqPool`;
 export const GAME_SESSIONS = `${NS}gameSessions`;
+export const GAME_BANS = `${NS}gameBans`;
 
 export function gameCollection(name: string) {
   return adminDb.collection(name);
 }
 
-export type GameKind = "word" | "type";
+export type GameKind = "word" | "type" | "problem" | "blitz";
 
 /** Tier 0 = free; 1..3 = paid ladder. Throws on anything else. */
 export function assertValidTier(tier: number): void {

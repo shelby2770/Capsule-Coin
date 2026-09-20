@@ -108,6 +108,16 @@ function TypeRace() {
   const liveWpm = elapsedSec > 1 ? Math.round((correctChars / 5 / elapsedSec) * 60) : 0;
   const progress = target.length ? Math.round((correctChars / target.length) * 100) : 0;
 
+  // Get-ready breather: startedAtMs is set in the FUTURE, so the clock and typing
+  // only begin once `now` passes it. Until then we show a countdown over the passage.
+  const armed = race ? now >= race.startedAtMs : true;
+  const countdownLeft = race ? Math.max(0, Math.ceil((race.startedAtMs - now) / 1000)) : 0;
+  // Current-word error: the typed text isn't a prefix of the target word (a wrong
+  // letter), or it runs past the word's end. Drives the red input box + red word —
+  // the mistyped characters stay in the INPUT, so the passage never shifts.
+  const curWord = words[wi] ?? "";
+  const curError = cur.length > 0 && (!curWord.startsWith(cur) || cur.length > curWord.length);
+
   const tiers: TierOption[] = useMemo(() => {
     const fees = status?.tierFees ?? [20, 50, 100];
     const diffs = [5, 4, 3, 2]; // free, t1, t2, t3
@@ -261,42 +271,51 @@ function TypeRace() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [complete]);
 
-  // Keyboard: drive the current-word buffer ourselves so we control advancing
-  // (space only moves on once the word is exactly right) and Ctrl+Backspace
-  // (clears the current word only — never the locked-in previous words).
-  const onKeyDown = useCallback(
-    (e: React.KeyboardEvent<HTMLInputElement>) => {
+  // A real, visible input holds only the CURRENT WORD. Typing + backspace flow
+  // through onChange naturally; we special-case space (advance only once the word is
+  // exactly right) and Ctrl/Cmd+Backspace (wipe the current word, never the locked-in
+  // ones). Space is handled in onChange so it also works where keydown can't be
+  // prevented (mobile / IME). Completed words stay locked because the box clears on
+  // advance — you can't backspace into a previous word.
+  const onInputChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
       if (submitting || complete || !race) return;
-      const k = e.key;
-      if (k === "Backspace") {
-        e.preventDefault();
-        if (e.ctrlKey || e.metaKey || e.altKey) setCur(""); // clear the current word only
-        else setCur((c) => c.slice(0, -1));
-        return;
-      }
-      if (k === " " || k === "Spacebar") {
-        e.preventDefault();
-        // Advance only when the current word matches exactly; otherwise it stays
-        // put (a wrong/half-typed word can't be skipped).
-        if (cur === words[wi] && wi < lastIdx) {
+      let v = e.currentTarget.value;
+      if (v.includes(" ")) {
+        const attempt = v.slice(0, v.indexOf(" ")); // what was typed before the space
+        if (attempt === words[wi] && wi < lastIdx) {
           keystrokesRef.current += 1;
           setWi(wi + 1);
           setCur("");
+          return;
         }
-        return;
+        v = v.replace(/ /g, ""); // not a valid advance — drop the space, keep the word
       }
-      if (k === "Enter") {
-        e.preventDefault();
-        return;
-      }
-      if (k.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
-        e.preventDefault();
-        keystrokesRef.current += 1;
-        setCur((c) => c + k);
-      }
+      if (v.length > cur.length) keystrokesRef.current += v.length - cur.length;
+      setCur(v);
     },
     [submitting, complete, race, cur, words, wi, lastIdx],
   );
+
+  const onInputKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLInputElement>) => {
+      if (!race || submitting || complete) return;
+      if (Date.now() < race.startedAtMs) {
+        e.preventDefault(); // still in the get-ready countdown
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey || e.altKey) && e.key === "Backspace") {
+        e.preventDefault();
+        setCur(""); // clear the current word only
+      }
+    },
+    [race, submitting, complete],
+  );
+
+  // The input is disabled during the countdown; focus it the instant it arms.
+  useEffect(() => {
+    if (race && armed && !result && !submitting) inputRef.current?.focus();
+  }, [race, armed, result, submitting]);
 
   if (!race && !showIntro) {
     return (
@@ -313,7 +332,7 @@ function TypeRace() {
           <Keyboard size={22} className="text-ember-400" /> Type Racing
         </h1>
         <p className="mt-1 text-sm text-mute">
-          Type it word by word — a word stays red until it&apos;s right. Faster = more DC.
+          Type each word in the box — the passage turns green as you go. Faster = more DC.
         </p>
       </div>
 
@@ -321,11 +340,12 @@ function TypeRace() {
         <GameIntroModal
           title="Type Racing"
           icon={<Keyboard size={22} />}
-          intro="Type the passage as fast as you can, one word at a time. A word stays red until every letter is right, and you can't move on until it matches."
+          intro="Type the passage into the box below it, one word at a time. Each word you finish turns green; the box turns red on a wrong letter and won't advance until it matches."
           rules={[
-            "You advance word by word — the current word turns red if any letter is wrong, and space only moves on once it's exactly right.",
+            "A 5-second get-ready countdown lets you read the passage first — the clock starts at zero.",
+            "Type into the box beneath the passage; press space to lock each word in green. A wrong letter reddens the box and the word, and you can't move on until it's right.",
             "The faster and cleaner you type, the more DC you earn. Pasting is disabled.",
-            "Higher tiers give easier passages and free re-attempts to beat your best. Backing out here costs nothing.",
+            "Higher tiers give easier passages plus free re-attempts — restart mid-race or chase a better score.",
           ]}
           tiers={tiers}
           busy={starting}
@@ -338,54 +358,121 @@ function TypeRace() {
       {race && !result && (
         <>
           <div className="dc-card flex items-center justify-around p-4 text-center">
-            <Metric icon={<Timer size={15} />} label="Time" value={`${Math.floor(elapsedSec)}s`} />
-            <Metric icon={<Gauge size={15} />} label="WPM" value={String(liveWpm)} ember />
-            <Metric label="Progress" value={`${progress}%`} />
-            {race.reAttemptsLeft > 0 && (
-              <Metric icon={<RotateCcw size={15} />} label="Retries" value={String(race.reAttemptsLeft)} />
+            {armed ? (
+              <>
+                <Metric icon={<Timer size={15} />} label="Time" value={`${Math.floor(elapsedSec)}s`} />
+                <Metric icon={<Gauge size={15} />} label="WPM" value={String(liveWpm)} ember />
+                <Metric label="Progress" value={`${progress}%`} />
+                {race.reAttemptsLeft > 0 && (
+                  <Metric icon={<RotateCcw size={15} />} label="Retries" value={String(race.reAttemptsLeft)} />
+                )}
+              </>
+            ) : (
+              <div className="flex flex-col items-center gap-0.5">
+                <span className="text-[11px] uppercase tracking-widest text-mute">
+                  Get ready · read the passage
+                </span>
+                <span className="font-display text-4xl font-bold tabular-nums text-ember-300">
+                  {countdownLeft}
+                </span>
+              </div>
             )}
           </div>
 
+          {/* Passage — STATIC: only colours change as you type, characters never move.
+              Mistyped/overrun text lives in the input box below, so this can't shift. */}
           <div className="dc-card cursor-text p-5 leading-relaxed" onClick={() => inputRef.current?.focus()}>
             <p className="whitespace-pre-wrap break-words font-mono text-[15px]">
               {tokens.map((tk, i) => {
-                const before = target.slice(i === 0 ? 0 : tokens[i - 1].start + tokens[i - 1].word.length, tk.start);
+                const before = target.slice(
+                  i === 0 ? 0 : tokens[i - 1].start + tokens[i - 1].word.length,
+                  tk.start,
+                );
                 const sep = before ? (
-                  <span key={`s${i}`} className="whitespace-pre-wrap text-mute/40">
+                  <span key={`s${i}`} className={i <= wi || complete ? "text-emerald-400" : "text-mute/40"}>
                     {before}
                   </span>
                 ) : null;
+                let node: React.ReactNode;
+                if (i < wi || complete) {
+                  // Completed → green. `complete` flips the whole passage green the
+                  // instant the last word matches, so it reads as done during the
+                  // (brief) submit round-trip before the results overlay appears.
+                  node = <span className="text-emerald-400">{tk.word}</span>;
+                } else if (i === wi) {
+                  node = curError ? (
+                    <span className="rounded bg-red-500/25 text-red-200 underline decoration-red-400/70 underline-offset-2">
+                      {tk.word}
+                    </span>
+                  ) : (
+                    <span className="underline decoration-white/30 underline-offset-2">
+                      <span className="text-white">{tk.word.slice(0, cur.length)}</span>
+                      <span className="text-mute">{tk.word.slice(cur.length)}</span>
+                    </span>
+                  );
+                } else {
+                  node = <span className="text-mute">{tk.word}</span>; // not yet typed
+                }
                 return (
                   <span key={`w${i}`}>
                     {sep}
-                    <WordSpan word={tk.word} mode={i < wi ? "done" : i === wi ? "current" : "pending"} cur={cur} />
+                    {node}
                   </span>
                 );
               })}
             </p>
-            <input
-              ref={inputRef}
-              value={cur}
-              onChange={() => {}}
-              onKeyDown={onKeyDown}
-              spellCheck={false}
-              autoComplete="off"
-              autoCorrect="off"
-              autoCapitalize="off"
-              inputMode="text"
-              className="absolute h-0 w-0 opacity-0"
-              aria-label="Type the passage here"
-              onPaste={(e) => {
-                e.preventDefault();
-                toast.error("Pasting is disabled.");
-              }}
-              onDrop={(e) => e.preventDefault()}
-            />
           </div>
 
+          {/* Dedicated input (typeracer-style): holds the current word; turns soft-red
+              on a mistype. Errors never touch the passage layout above. */}
+          <input
+            ref={inputRef}
+            type="text"
+            value={cur}
+            onChange={onInputChange}
+            onKeyDown={onInputKeyDown}
+            disabled={!armed || submitting || complete}
+            spellCheck={false}
+            autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="off"
+            inputMode="text"
+            aria-label="Type the passage here"
+            placeholder={armed ? "Type the passage here…" : "Get ready — the race is about to start"}
+            onPaste={(e) => {
+              e.preventDefault();
+              toast.error("Pasting is disabled.");
+            }}
+            onDrop={(e) => e.preventDefault()}
+            className={`w-full rounded-xl border px-4 py-3 font-mono text-[15px] outline-none transition-colors disabled:opacity-60 ${
+              curError
+                ? "border-red-500/60 bg-red-500/15 text-red-100 placeholder:text-red-200/40"
+                : "border-white/15 bg-black/30 text-white placeholder:text-mute/50 focus:border-ember-500/60"
+            }`}
+          />
+
           <p className="text-center text-xs text-mute">
-            Click the passage if the keyboard doesn&apos;t respond. Ctrl+Backspace clears the current word.
+            Type each word and press space to lock it in green. Ctrl+Backspace clears the current word.
           </p>
+
+          {race.reAttemptsLeft > 0 && (
+            <div className="flex justify-center">
+              <button
+                type="button"
+                onClick={reattempt}
+                disabled={reattempting}
+                className="btn-ghost inline-flex items-center gap-1.5 text-sm disabled:opacity-50"
+                title="Start over with a fresh passage — spends one re-attempt"
+              >
+                {reattempting ? (
+                  <Loader2 size={15} className="animate-spin" />
+                ) : (
+                  <RotateCcw size={15} />
+                )}
+                Restart · {race.reAttemptsLeft} left
+              </button>
+            </div>
+          )}
         </>
       )}
 
@@ -431,36 +518,6 @@ function TypeRace() {
         </Portal>
       )}
     </div>
-  );
-}
-
-/** One word in the passage: locked-in (teal), current (typed + caret, or all-red
- *  on any wrong letter), or pending (muted). */
-function WordSpan({ word, mode, cur }: { word: string; mode: "done" | "current" | "pending"; cur: string }) {
-  if (mode === "done") {
-    return <span className="text-teal-300">{word}</span>;
-  }
-  if (mode === "pending") {
-    return <span className="text-mute/50">{word}</span>;
-  }
-  // current word
-  const wrong = !word.startsWith(cur) || cur.length > word.length;
-  if (wrong) {
-    return <span className="rounded-sm bg-red-500/25 text-red-300">{word}</span>;
-  }
-  return (
-    <span className="rounded-sm bg-ember-500/10 ring-1 ring-ember-500/25">
-      {word.split("").map((ch, j) => (
-        <span
-          key={j}
-          className={`${j < cur.length ? "text-white" : "text-mute/50"} ${
-            j === cur.length ? "border-l-2 border-ember-400" : ""
-          }`}
-        >
-          {ch}
-        </span>
-      ))}
-    </span>
   );
 }
 

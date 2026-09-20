@@ -1,0 +1,156 @@
+{
+  "free": [
+    {
+      "title": "Ancestral Minimum",
+      "difficulty": 5,
+      "statement": "You are given a tree with N vertices rooted at vertex 1. Each vertex i has two parameters A[i] and B[i]. Compute an array dp of size N where dp[1] = 0, and for every u > 1,\n\n  dp[u] = min over all proper ancestors v of u of ( dp[v] + A[u] * B[v] ).\n\nHere the ancestors of u are the vertices on the path from the root to u, excluding u itself. Output the sum of dp[i] over all 2 <= i <= N, taken modulo 998244353.\n\nConstraints:\n  1 <= N <= 2*10^5\n  -10^9 <= A[i], B[i] <= 10^9\n  Time limit: 2.0s"
+    },
+    {
+      "title": "Distinct-Weight Paths",
+      "difficulty": 5,
+      "statement": "You are given a tree of N vertices where each edge has an integer weight W. For two vertices u and v, look at the edge weights on the simple path between them. Count the number of pairs (u, v) with 1 <= u < v <= N such that every edge weight on that path is distinct (equivalently, the number of distinct weights on the path equals the number of edges on the path).\n\nConstraints:\n  1 <= N <= 10^5\n  1 <= W <= N\n  Time limit: 2.5s"
+    },
+    {
+      "title": "First Occurrence",
+      "difficulty": 5,
+      "statement": "You are given a string S of length N of lowercase English letters, and Q queries. Each query gives an index i and a length L (1-indexed), describing the substring S[i .. i+L-1]. For each query, output the smallest starting index j such that S[j .. j+L-1] equals S[i .. i+L-1] — i.e. the position of the first occurrence of that substring in S.\n\nConstraints:\n  1 <= N, Q <= 2*10^5\n  1 <= i and i+L-1 <= N\n  Time limit: 1.5s"
+    },
+    {
+      "title": "Triple Bit Balance",
+      "difficulty": 5,
+      "statement": "You are given an array A of N non-negative integers and an integer M. Count the number of triples (i, j, k) with 1 <= i < j < k <= N such that:\n  - (A[i] AND A[j] AND A[k]) = 0, and\n  - (A[i] OR A[j] OR A[k]) has exactly M set bits,\nwhere AND and OR are bitwise operators.\n\nConstraints:\n  1 <= N <= 10^6\n  0 <= A[i] < 2^20\n  0 <= M <= 20\n  Time limit: 3.0s"
+    },
+    {
+      "title": "Range Inversions",
+      "difficulty": 5,
+      "statement": "You are given an array A of N integers and Q queries. Each query is a pair (L, R). For each query, output the number of inversions in the subarray A[L .. R] — that is, the number of pairs (i, j) with L <= i < j <= R and A[i] > A[j].\n\nConstraints:\n  1 <= N, Q <= 10^5\n  1 <= A[i] <= 10^9\n  Time limit: 4.0s"
+    },
+    {
+      "title": "Worker Assignment",
+      "difficulty": 5,
+      "statement": "There are N workers and M jobs on a 2D plane. Worker i is at position (xi, yi). Job j is at position (pj, qj) and requires exactly C[j] workers. Each worker may be assigned to at most one job, and the cost of assigning a worker to a job is the Manhattan distance between their positions. Assign workers so that every job j receives exactly C[j] workers while minimizing the total cost. If it is impossible to staff every job, output -1.\n\nConstraints:\n  1 <= N, M <= 500\n  0 <= C[j] <= N, and the sum of all C[j] <= N\n  coordinates are integers in [-10^6, 10^6]\n  Time limit: 2.0s"
+    },
+    {
+      "title": "Polynomial Product",
+      "difficulty": 5,
+      "statement": "You are given an array A of N positive integers. Compute the coefficients of the polynomial\n\n  P(x) = product over i = 1..N of ( 1 + A[i]*x + A[i]^2 * x^2 ),\n\nmodulo 998244353. Output the coefficients of x^0, x^1, ..., x^(2N).\n\nConstraints:\n  1 <= N <= 10^5\n  1 <= A[i] < 998244353\n  Time limit: 3.5s"
+    },
+    {
+      "title": "Path Max Subsegment",
+      "difficulty": 5,
+      "statement": "You are given a tree of N vertices; every edge initially has weight 0. Process Q queries of two kinds:\n  1 u v x  ->  add x to the weight of every edge on the simple path between u and v.\n  2 u v    ->  output the maximum sum over all non-empty contiguous blocks of edges lying on the simple path from u to v. (If u = v the path has no edges; output 0.)\n\nConstraints:\n  1 <= N, Q <= 10^5\n  -10^4 <= x <= 10^4\n  Time limit: 3.0s"
+    },
+    {
+      "title": "Token Game on a DAG",
+      "difficulty": 5,
+      "statement": "You are given a directed acyclic graph with N vertices and M edges, and K tokens placed on vertices (several tokens may share a vertex). Two players alternate turns, the first player moving first. On a turn, a player picks one token and moves it along one outgoing directed edge. A player who cannot move (every token sits on a vertex with no outgoing edge) loses. Determine whether the first player has a winning strategy.\n\nConstraints:\n  1 <= N <= 10^5\n  0 <= M <= 2*10^5\n  1 <= K <= N\n  Time limit: 1.5s"
+    },
+    {
+      "title": "Partitioned XOR Scores",
+      "difficulty": 5,
+      "statement": "You are given an array A of N non-negative integers and an integer K. Partition A into exactly K contiguous non-empty subarrays. The score of a subarray A[L .. R] is the maximum value of (A[i] XOR A[i+1] XOR ... XOR A[j]) taken over all L <= i <= j <= R (the largest XOR of a contiguous block inside it). Maximize the total score summed over the K subarrays.\n\nConstraints:\n  1 <= K <= N <= 3000\n  0 <= A[i] < 2^30\n  Time limit: 4.0s"
+    }
+  ],
+  "arrays": [
+    {
+      "title": "Range Assign & Range k-th Smallest",
+      "difficulty": 5,
+      "statement": "You are given an array A of N integers. Process Q operations of two kinds:\n  1 L R x  ->  set A[i] = x for every index i with L <= i <= R.\n  2 L R k  ->  output the k-th smallest value among A[L], A[L+1], ..., A[R] (with 1 <= k <= R - L + 1).\n\nConstraints:\n  1 <= N, Q <= 2*10^5\n  1 <= A[i], x <= 10^9\n  1 <= L <= R <= N\n  Time limit: 3.0s"
+    },
+    {
+      "title": "Subarrays With a Given Median",
+      "difficulty": 5,
+      "statement": "You are given an array A of N distinct integers and an integer K (K appears in A). Count the number of contiguous subarrays whose median equals K. For a subarray of even length, define the median as the smaller of its two middle elements after sorting.\n\nConstraints:\n  1 <= N <= 2*10^5\n  1 <= A[i], K <= N\n  all A[i] are distinct\n  Time limit: 2.0s"
+    },
+    {
+      "title": "Distinct Values in a Range",
+      "difficulty": 5,
+      "statement": "You are given an array A of N integers. Process Q operations of two kinds, in order:\n  1 p x  ->  set A[p] = x.\n  2 L R  ->  output the number of distinct values in A[L .. R].\n\nConstraints:\n  1 <= N, Q <= 10^5\n  1 <= A[i], x <= 10^9\n  1 <= L <= R <= N\n  Time limit: 4.0s"
+    }
+  ],
+  "strings": [
+    {
+      "title": "Count Distinct Substrings",
+      "difficulty": 5,
+      "statement": "You are given a string S of length N of lowercase English letters. Output the number of distinct non-empty substrings of S.\n\nConstraints:\n  1 <= N <= 2*10^5\n  Time limit: 1.5s"
+    },
+    {
+      "title": "Sum of Pairwise LCP",
+      "difficulty": 5,
+      "statement": "You are given a string S of length N of lowercase English letters. For two suffixes of S starting at positions i and j, let lcp(i, j) be the length of their longest common prefix. Compute the sum of lcp(i, j) over all pairs 1 <= i < j <= N. (The answer fits in a signed 64-bit integer.)\n\nConstraints:\n  1 <= N <= 2*10^5\n  Time limit: 2.0s"
+    },
+    {
+      "title": "Multi-Pattern Occurrences",
+      "difficulty": 5,
+      "statement": "You are given a string S of length N and Q query strings t_1, ..., t_Q, all of lowercase English letters. For each query string t, output the number of times t occurs as a contiguous substring of S (occurrences may overlap).\n\nConstraints:\n  1 <= N <= 2*10^5\n  1 <= Q <= 2*10^5\n  the total length of all query strings is at most 10^6\n  Time limit: 2.0s"
+    }
+  ],
+  "graphs": [
+    {
+      "title": "Two-Satisfiability",
+      "difficulty": 5,
+      "statement": "There are N boolean variables x_1, ..., x_N and M clauses. Each clause is a disjunction (OR) of exactly two literals, where a literal is a variable or its negation; the whole formula is the conjunction (AND) of all clauses. Decide whether some assignment makes every clause true. If it does, output any satisfying assignment; otherwise report that the formula is unsatisfiable.\n\nConstraints:\n  1 <= N <= 10^6\n  0 <= M <= 10^6\n  Time limit: 2.0s"
+    },
+    {
+      "title": "Project Selection",
+      "difficulty": 5,
+      "statement": "There are N projects. Project i yields profit p_i, which may be negative. Some projects have prerequisites given as pairs (a, b), meaning project a may be selected only if project b is also selected. Choose a subset of projects that is closed under the prerequisite relation and maximizes the total profit (the empty set, profit 0, is allowed). Output the maximum total profit.\n\nConstraints:\n  1 <= N <= 5000\n  0 <= number of prerequisite pairs <= 5*10^4\n  -10^9 <= p_i <= 10^9\n  Time limit: 2.0s"
+    },
+    {
+      "title": "K-th Shortest Walk",
+      "difficulty": 5,
+      "statement": "You are given a directed graph with N vertices and M edges; edge e runs from u_e to v_e with non-negative length w_e. Given vertices s and t and an integer K, output the length of the K-th shortest walk from s to t. Walks may repeat vertices and edges, and are ordered by non-decreasing total length (a length reachable by several distinct walks is counted once per walk). If fewer than K walks from s to t exist, output -1.\n\nConstraints:\n  1 <= N <= 10^5\n  0 <= M <= 2*10^5\n  1 <= K <= 10^5\n  0 <= w_e <= 10^9\n  Time limit: 2.0s"
+    }
+  ],
+  "number-theory": [
+    {
+      "title": "GCD Sum Table",
+      "difficulty": 5,
+      "statement": "Given an integer N, compute the sum of gcd(i, j) over all pairs (i, j) with 1 <= i <= N and 1 <= j <= N, taken modulo 998244353.\n\nConstraints:\n  1 <= N <= 10^7\n  Time limit: 2.0s"
+    },
+    {
+      "title": "Floor Sum",
+      "difficulty": 5,
+      "statement": "Given integers N, M, A, and B, compute the sum of floor( (A*i + B) / M ) for i = 0, 1, ..., N-1.\n\nConstraints:\n  1 <= N <= 10^9\n  1 <= M <= 10^9\n  0 <= A, B < M\n  the answer fits in a signed 64-bit integer\n  Time limit: 1.0s"
+    },
+    {
+      "title": "Discrete Logarithm",
+      "difficulty": 5,
+      "statement": "Given integers a, b, and a modulus m, find the smallest non-negative integer x such that a^x is congruent to b modulo m. If no such x exists, report that there is no solution. Note that m is not necessarily prime.\n\nConstraints:\n  1 <= a, b < m\n  2 <= m <= 10^9\n  Time limit: 1.5s"
+    }
+  ],
+  "geometry": [
+    {
+      "title": "Point-Set Diameter",
+      "difficulty": 5,
+      "statement": "You are given N points in the plane with integer coordinates. The diameter of the set is the greatest Euclidean distance between any two of the points. Output the square of the diameter (an exact integer).\n\nConstraints:\n  2 <= N <= 2*10^5\n  coordinates are integers in [-10^9, 10^9]\n  Time limit: 2.0s"
+    },
+    {
+      "title": "Smallest Enclosing Circle",
+      "difficulty": 5,
+      "statement": "You are given N points in the plane. Find the circle of smallest radius that contains all of them (points on the boundary count as contained), and output its center and radius.\n\nConstraints:\n  1 <= N <= 10^5\n  coordinates are integers with absolute value at most 10^6\n  an absolute or relative error of 1e-6 is accepted\n  Time limit: 2.0s"
+    },
+    {
+      "title": "Half-Plane Intersection Area",
+      "difficulty": 5,
+      "statement": "You are given N half-planes, each given by a directed line; the half-plane is the region to the left of the line's direction. Output the area of the intersection of all N half-planes. The intersection is guaranteed to be bounded; if it is empty, output 0.\n\nConstraints:\n  1 <= N <= 10^5\n  line coordinates are integers with absolute value at most 10^6\n  an absolute or relative error of 1e-6 is accepted\n  Time limit: 2.0s"
+    }
+  ],
+  "dp": [
+    {
+      "title": "Minimum-Cost Partition",
+      "difficulty": 5,
+      "statement": "You are given an array A of N integers and an integer K. Partition A into exactly K contiguous non-empty segments. The cost of a segment is the square of the sum of its elements. Minimize the total cost summed over all K segments.\n\nConstraints:\n  1 <= K <= N <= 10^5\n  0 <= A[i] <= 10^4\n  Time limit: 3.0s"
+    },
+    {
+      "title": "At Most K Transactions",
+      "difficulty": 5,
+      "statement": "You are given the prices of a stock over N days: price[1..N]. You may complete at most K transactions, where a transaction is buying on one day and selling on a strictly later day; you may never hold more than one share at a time (you must sell before buying again). Maximize the total profit.\n\nConstraints:\n  1 <= N <= 10^6\n  1 <= K <= N\n  0 <= price[i] <= 10^9\n  Time limit: 2.0s"
+    },
+    {
+      "title": "Domino Tilings",
+      "difficulty": 5,
+      "statement": "Count the number of ways to tile an N by M grid completely with 1x2 dominoes, where each domino covers two orthogonally adjacent cells (placed horizontally or vertically). Two tilings differ if some cell is covered by a differently oriented domino. Output the count modulo 10^9 + 7.\n\nConstraints:\n  1 <= N <= 10^9\n  1 <= M <= 12\n  Time limit: 2.0s"
+    }
+  ]
+}

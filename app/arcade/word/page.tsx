@@ -339,6 +339,14 @@ function WordGame() {
     return () => window.removeEventListener("keydown", handler);
   }, [onKey]);
 
+  // Once the current word is solved (last row all-green), suppress the empty
+  // "next attempt" row and freeze the attempt counter during the ~1s win
+  // celebration — otherwise the board flashes a blank input row before the reward
+  // is tallied / the next word (or results) lands.
+  const lastRow = cur?.attempts[cur.attempts.length - 1];
+  const wordSolved =
+    !!lastRow && lastRow.feedback.length > 0 && lastRow.feedback.every((f) => f === "correct");
+
   // ── render ──────────────────────────────────────────────────────────────────
   if (!cur && !showIntro) {
     return (
@@ -365,7 +373,7 @@ function WordGame() {
           rules={[
             "Solve it in as few guesses as you can, and quickly — sharper, faster solves are worth more.",
             "Up to 7 guesses per word. Paid tiers give more words, shown one at a time.",
-            "One 10-minute session — the clock keeps running if you step away. Backing out here costs nothing.",
+            "One timed session per play (3–20 minutes by tier) — the clock keeps running if you step away.",
           ]}
           tiers={tiers}
           busy={starting}
@@ -389,7 +397,7 @@ function WordGame() {
                 className={`inline-flex items-center gap-1 tabular-nums ${
                   cur.ttlMs - sessionMs <= 60_000 ? "text-ember-300" : "text-mute"
                 }`}
-                title="Session time — one 10-minute run; keeps going if you leave and return, and ends at 10:00"
+                title={`Session time — keeps running if you leave and return; this session ends at ${fmtClock(cur.ttlMs)}`}
               >
                 <Timer size={14} /> {fmtClock(sessionMs)}
                 <span className="text-mute/50">/ {fmtClock(cur.ttlMs)}</span>
@@ -413,7 +421,7 @@ function WordGame() {
                 <Hash size={12} className="text-ember-400" />
                 <span className="text-mute">Attempt</span>
                 <span className="font-semibold text-white tabular-nums">
-                  {cur.attempts.length + (finished ? 0 : 1)}
+                  {cur.attempts.length + (finished || wordSolved ? 0 : 1)}
                 </span>
                 <span className="text-mute">of {cur.maxAttempts}</span>
               </span>
@@ -428,7 +436,7 @@ function WordGame() {
                   win={ri === cur.attempts.length - 1 && a.feedback.every((f) => f === "correct")}
                 />
               ))}
-              {!finished && (
+              {!finished && !wordSolved && (
                 <Row
                   letters={typed.toUpperCase().split("")}
                   states={null}

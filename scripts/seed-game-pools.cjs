@@ -16,6 +16,8 @@
  * Collections written:
  *   wordPool/len5, wordPool/len6           = { words: string[] }   (consumed once)
  *   paragraphPool/d1 .. d5                 = { paragraphs: [{id,text}] } (reused)
+ *   problemPool/<topic>                    = { problems: [{id,title,statement,difficulty}] } (consumed once)
+ *   mcqPool/all                            = { questions: [{id,question,options,answer,topic}] } (consumed once)
  *
  * NOTE: merge does not track words consumed in past sessions, so re-seeding the
  * SAME list can reintroduce a previously-used word. For a strict used-once corpus
@@ -42,9 +44,13 @@ const REPLACE = flag("replace");
 const NS = DOC === "state" ? "" : `${DOC}__`;
 const WORD_POOL = `${NS}wordPool`;
 const PARAGRAPH_POOL = `${NS}paragraphPool`;
+const PROBLEM_POOL = `${NS}problemPool`;
+const MCQ_POOL = `${NS}mcqPool`;
 
 const words = JSON.parse(fs.readFileSync(path.join(__dirname, "game-seed", "words.json"), "utf8"));
 const paras = JSON.parse(fs.readFileSync(path.join(__dirname, "game-seed", "paragraphs.json"), "utf8"));
+const problems = JSON.parse(fs.readFileSync(path.join(__dirname, "game-seed", "problems.json"), "utf8"));
+const mcqs = JSON.parse(fs.readFileSync(path.join(__dirname, "game-seed", "mcqs.json"), "utf8"));
 const pid = (text) => crypto.createHash("sha1").update(text).digest("hex").slice(0, 12);
 
 async function seedWords() {
@@ -86,21 +92,95 @@ async function seedParagraphs() {
   return report;
 }
 
+async function seedProblems() {
+  const report = [];
+  for (const topic of Object.keys(problems)) {
+    const incoming = problems[topic]
+      .filter((p) => p && typeof p.statement === "string" && p.statement.trim().length > 0)
+      .map((p) => ({
+        id: pid(p.statement),
+        title: String(p.title || "Problem"),
+        statement: String(p.statement),
+        difficulty: Number(p.difficulty) || 1,
+      }));
+    const ref = db.collection(PROBLEM_POOL).doc(topic);
+    const snap = await ref.get();
+    const existing = snap.exists && Array.isArray(snap.data().problems) ? snap.data().problems : [];
+    let merged;
+    if (REPLACE) {
+      merged = incoming;
+    } else {
+      const seen = new Set(existing.map((p) => p.id));
+      merged = [...existing, ...incoming.filter((p) => !seen.has(p.id))];
+    }
+    report.push({ doc: `${PROBLEM_POOL}/${topic}`, existing: existing.length, incoming: incoming.length, after: merged.length });
+    if (COMMIT) await ref.set({ problems: merged }, { merge: false });
+  }
+  return report;
+}
+
+async function seedMcqs() {
+  const incoming = mcqs
+    .filter(
+      (q) =>
+        q &&
+        typeof q.question === "string" &&
+        Array.isArray(q.options) &&
+        q.options.length >= 2 &&
+        Number.isInteger(q.answer) &&
+        q.answer >= 0 &&
+        q.answer < q.options.length,
+    )
+    .map((q) => ({
+      id: pid(q.question),
+      question: String(q.question),
+      options: q.options.map((o) => String(o)),
+      answer: Number(q.answer),
+      topic: String(q.topic || "ai"),
+      ...(q.explanation ? { explanation: String(q.explanation) } : {}),
+    }));
+  const ref = db.collection(MCQ_POOL).doc("all");
+  const snap = await ref.get();
+  const existing = snap.exists && Array.isArray(snap.data().questions) ? snap.data().questions : [];
+  let merged;
+  if (REPLACE) {
+    merged = incoming;
+  } else {
+    const seen = new Set(existing.map((q) => q.id));
+    merged = [...existing, ...incoming.filter((q) => !seen.has(q.id))];
+  }
+  const report = [{ doc: `${MCQ_POOL}/all`, existing: existing.length, incoming: incoming.length, after: merged.length }];
+  if (COMMIT) await ref.set({ questions: merged }, { merge: false });
+  return report;
+}
+
 (async () => {
   console.log(`Seeding game pools → doc namespace "${DOC}" (${NS || "prod/plain"})`);
   console.log(`Mode: ${COMMIT ? (REPLACE ? "COMMIT + REPLACE" : "COMMIT + MERGE") : "DRY RUN (no writes)"}\n`);
 
   const w = await seedWords();
   const p = await seedParagraphs();
+  const pr = await seedProblems();
+  const mc = await seedMcqs();
 
   console.log("Words:");
   w.forEach((r) => console.log(`  ${r.doc}: existing ${r.existing} + incoming ${r.incoming} -> ${r.after}`));
   console.log("Paragraphs:");
   p.forEach((r) => console.log(`  ${r.doc}: existing ${r.existing} + incoming ${r.incoming} -> ${r.after}`));
+  console.log("Problems:");
+  pr.forEach((r) => console.log(`  ${r.doc}: existing ${r.existing} + incoming ${r.incoming} -> ${r.after}`));
+  console.log("MCQs:");
+  mc.forEach((r) => console.log(`  ${r.doc}: existing ${r.existing} + incoming ${r.incoming} -> ${r.after}`));
 
   const totalWords = w.reduce((a, r) => a + r.after, 0);
   const totalParas = p.reduce((a, r) => a + r.after, 0);
-  console.log(`\nAfter seed: ${totalWords} words, ${totalParas} paragraphs${COMMIT ? " (written)" : " (dry run — nothing written)"}.`);
+  const totalProblems = pr.reduce((a, r) => a + r.after, 0);
+  const totalMcqs = mc.reduce((a, r) => a + r.after, 0);
+  console.log(
+    `\nAfter seed: ${totalWords} words, ${totalParas} paragraphs, ${totalProblems} problems, ${totalMcqs} MCQs${
+      COMMIT ? " (written)" : " (dry run — nothing written)"
+    }.`,
+  );
   if (!COMMIT) console.log("Re-run with --commit to write.");
   process.exit(0);
 })().catch((e) => { console.error("ERR:", (e && e.stack) || e); process.exit(1); });

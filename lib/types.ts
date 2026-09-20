@@ -16,6 +16,7 @@ export type MemberPublic = {
   graceUntil: string | null; // ISO deadline while below the credit floor, else null
   banned: boolean; // permanent lockout (missed the grace deadline)
   onboardedAt: string | null; // when they finished the DC intro; null = show story
+  arcadeOnboardedAt: string | null; // when they finished the Arcade intro; null = show story
 };
 
 export type MeResponse =
@@ -255,7 +256,7 @@ export type DcRateResponse = {
 };
 
 // ── Arcade games (earn DC through Wordle-style + type-racing games) ──────────
-export type GameKind = "word" | "type";
+export type GameKind = "word" | "type" | "problem" | "blitz";
 
 /** Hub status: shared free-play budget, the reserve, and per-game affordances. */
 export type ArcadeStatus = {
@@ -269,6 +270,9 @@ export type ArcadeStatus = {
   resetsAtMs: number; // next daily refill (UTC midnight)
   tierFees: number[]; // CC fee for tiers 1..3
   wordsRemaining: number; // words left in the pool
+  paragraphsRemaining: number; // typing passages available (reused, not consumed)
+  problemsRemaining: number; // problem-solving problems available (reused)
+  mcqRemaining: number; // AI Blitz questions available (reused)
   wordCounts: number[]; // words guessed per tier [free, 1, 2, 3]
   resumable: { kind: GameKind; sessionId: string } | null; // an unfinished game to resume
 };
@@ -315,7 +319,8 @@ export type TypeStart = {
   tier: number;
   text: string;
   difficulty: number;
-  startedAtMs: number; // server timing anchor (authoritative)
+  startedAtMs: number; // server timing anchor (authoritative) — set in the FUTURE by countdownMs
+  countdownMs: number; // "get ready" breather before the clock starts (startedAtMs − now)
   reAttemptsLeft: number; // free retries remaining on this paid entry
 };
 
@@ -328,6 +333,71 @@ export type TypeSubmitResult = {
   bestWpm: number; // best WPM across all attempts on this entry
   improved: boolean; // did this run set a new best (and mint a top-up)?
   reAttemptsLeft: number; // free retries still available
+};
+
+// ── Problem Solving (LeetCode-style, LLM-graded) ────────────────────────────
+/** Pre-start gate — lets the page show a ban screen / availability without spending. */
+export type ProblemGate = {
+  banned: boolean;
+  banUntilMs: number; // 0 when not banned
+  problemsRemaining: number;
+  maxDc: number[]; // internal: length = how many tiers exist (values not shown to players)
+  topics: string[]; // topics with problems — offered when a paid tier picks a topic
+};
+
+/** Public view of a problem session — the statement is sent (reading it IS the game). */
+export type ProblemBoard = {
+  sessionId: string;
+  tier: number;
+  title: string;
+  statement: string;
+  topic: string;
+  difficulty: number;
+  startedAtMs: number; // server timing anchor
+  deadlineMs: number; // startedAtMs + secToSolve×1000 (hard auto-submit)
+  secToSolve: number;
+  maxDc: number; // this tier's DC cap
+  boilerplate: { cpp: string; python: string };
+  done: boolean; // session already finished/graded
+};
+
+export type ProblemSubmitResult = {
+  mark: number; // grader's mark, 0..10 (sum of the rubric breakdown)
+  feedback: string; // one/two-sentence grader note
+  breakdown?: { label: string; score: number; max: number }[]; // per-criterion rubric scores (empty on fallback)
+  minted: number; // DC minted this submit
+  totalReward: number; // DC on this entry
+  maxDc: number; // the tier cap the mark was scaled against
+  done: boolean;
+};
+
+/** Copy-guard tally response — the server bans once the copied fraction crosses the ratio. */
+export type ProblemCopyResult = {
+  banned: boolean;
+  banUntilMs: number; // 0 when not (yet) banned
+  copiedRatio: number; // cumulative copied chars / statement length
+};
+
+// ── AI Blitz (rapid-fire AI/ML MCQ) ─────────────────────────────────────────
+export type BlitzQuestion = { question: string; options: string[] }; // never carries the answer
+
+export type BlitzStart = {
+  sessionId: string;
+  questions: BlitzQuestion[];
+  secPerQuestion: number;
+  startedAtMs: number;
+  dcPerCorrect: number;
+};
+
+export type BlitzSubmitResult = {
+  correct: number;
+  total: number;
+  minted: number; // DC minted (correct × dcPerCorrect, reserve-capped)
+  totalReward: number;
+  chosen: number[]; // what the player picked per question (-1 = unanswered)
+  correctAnswers: number[]; // the right option index per question (for review)
+  explanations: string[]; // per-question explanation, revealed only now (empty string = none)
+  tooFast: boolean; // submitted implausibly fast → scored but no DC awarded
 };
 
 /** A marketplace offer as broadcast in the notifications feed (all members). */

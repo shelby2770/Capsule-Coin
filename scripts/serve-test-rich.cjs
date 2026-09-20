@@ -2,9 +2,9 @@
 //
 //   1) Tops up a test account's CC to an effectively-infinite balance in the
 //      ISOLATED `capsule_test` Firestore ledger (NEVER production), and clears any
-//      ban / credit-floor grace + hands back today's free play, so the account can
-//      always play every tier.
-//   2) Runs `next dev` on port 2771 against that same isolated doc, with Google
+//      ban / credit-floor grace (including the game-scoped Problem Solving copy-ban)
+//      + hands back today's free play, so the account can always play every tier.
+//   2) Runs `next dev` on port 2772 against that same isolated doc, with Google
 //      Sheet sync disabled — exactly like scripts/serve-test.cjs.
 //
 // Balances are stored-and-trusted in the ledger (the SHA-256 hash chain only
@@ -40,6 +40,7 @@ const admin = require("firebase-admin");
 const PROJECT = path.join(__dirname, "..");
 const DOC_ID = "capsule_test";
 const SESSIONS_COLLECTION = `${DOC_ID}__gameSessions`;
+const BANS_COLLECTION = `${DOC_ID}__gameBans`;
 const DEFAULT_EMAIL = "adnan.istiaque@orbitax.com";
 const DEFAULT_AMOUNT = 1_000_000_000; // 1e9 CC — effectively infinite for testing
 
@@ -153,6 +154,17 @@ async function clearSessions(db, email) {
   return q.size;
 }
 
+// Game-scoped bans (e.g. the Problem Solving copy-cheat lockout) live in their own
+// collection, separate from the account-level `banned` flag the top-up clears. Wipe
+// this member's ban doc so a copy-guard test can't leave them locked out.
+async function clearGameBans(db, email) {
+  const ref = db.collection(BANS_COLLECTION).doc(email);
+  const snap = await ref.get();
+  if (!snap.exists) return false;
+  await ref.delete();
+  return true;
+}
+
 function serve() {
   const env = {
     ...process.env,
@@ -161,8 +173,8 @@ function serve() {
     // Match the post-migration DC supply so DC->CC convert quotes read realistically.
     DC_REF_SUPPLY: process.env.DC_REF_SUPPLY || "906",
   };
-  console.log("[rich] starting test server -> http://localhost:2771  (LEDGER_DOC_ID=capsule_test)\n");
-  const p = spawn("npx", ["next", "dev", "-p", "2771"], {
+  console.log("[rich] starting test server -> http://localhost:2772  (LEDGER_DOC_ID=capsule_test)\n");
+  const p = spawn("npx", ["next", "dev", "-p", "2772"], {
     stdio: "inherit",
     cwd: PROJECT,
     env,
@@ -180,6 +192,8 @@ function serve() {
     console.log(
       `[rich] ${email} -> ${amount.toLocaleString()} CC in ledger/${DOC_ID} (ban/grace cleared, free play reset)`,
     );
+    const unbanned = await clearGameBans(db, email);
+    if (unbanned) console.log(`[rich] cleared this account's Problem Solving copy-ban`);
     if (fresh) {
       const n = await clearSessions(db, email);
       console.log(`[rich] --fresh: cleared ${n} game session(s) (per-tier daily limits reset)`);

@@ -27,6 +27,24 @@ export type TypeItem = {
   startedAt: number; // ms epoch when served (server timing anchor)
 };
 
+export type ProblemItem = {
+  id: string;
+  title: string;
+  statement: string; // shown to the client — reading it IS the game (no secret)
+  topic: string;
+  difficulty: number;
+  startedAt: number; // ms epoch when served; deadline = startedAt + secToSolve
+};
+
+export type McqItem = {
+  id: string;
+  question: string;
+  options: string[];
+  answer: number; // correct option index — SERVER-ONLY, never serialized to the client
+  topic: string;
+  explanation?: string; // SERVER-ONLY until submit — revealed in the end-of-round review
+};
+
 export type GameSession = {
   id: string;
   email: string;
@@ -44,6 +62,14 @@ export type GameSession = {
   para?: TypeItem;
   bestWpm?: number; // best WPM across attempts (reward tracks the best run)
   reAttemptsLeft?: number; // free retries remaining on this paid entry
+  // problem solving
+  problem?: ProblemItem;
+  copiedChars?: number; // cumulative statement chars copied (copy-guard tally)
+  mark?: number; // grader's mark 0..10 (set on submit)
+  // ai blitz
+  mcqs?: McqItem[];
+  mcqStartedAt?: number; // when the quiz began (server anchor)
+  answers?: number[]; // chosen option index per question (-1 = unanswered)
 };
 
 const sessionRef = (id: string) => gameCollection(GAME_SESSIONS).doc(id);

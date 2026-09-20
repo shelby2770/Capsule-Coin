@@ -11,6 +11,7 @@ import { Skeleton } from "@/components/Skeleton";
 import { NotificationsBell } from "@/components/NotificationsBell";
 import { ValueTicker } from "@/components/ValueTicker";
 import { StoryMode } from "@/components/StoryMode";
+import { ArcadeStory } from "@/components/ArcadeStory";
 import { StandingBanner } from "@/components/StandingBanner";
 import { DarkCoinLogo } from "@/components/DarkCoinLogo";
 import { formatCC, formatDC } from "@/lib/format";
@@ -270,6 +271,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </main>
 
       <StoryMode />
+      <ArcadeStory />
     </div>
   );
 }

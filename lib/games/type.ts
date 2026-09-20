@@ -14,13 +14,20 @@ import {
 } from "@/lib/games/sessions";
 import type { TypeStart, TypeSubmitResult } from "@/lib/types";
 
-/** reward = baseReward at baseWpm, halving each stepWpm below it, 0 under minWpm. */
-function typeReward(wpm: number): number {
-  const { baseReward, baseWpm, stepWpm, minWpm } = config.games.type;
-  if (wpm < minWpm) return 0;
-  const bucket = Math.floor(wpm / stepWpm) * stepWpm; // round down to a 10-WPM band
-  const steps = Math.max(0, (baseWpm - bucket) / stepWpm);
-  return round2(baseReward / Math.pow(2, steps));
+/**
+ * Base DC contribution follows a CONTINUOUS curve of net WPM (no 10-WPM bucketing):
+ *   calc_DC(x) = baseReward                             for x >= baseWpm
+ *              = baseReward * 2^((x - baseWpm)/stepWpm)  for x <  baseWpm
+ * i.e. the full baseReward at/above baseWpm, halving smoothly every stepWpm below it,
+ * all the way toward 0 WPM (no hard floor; e.g. 20 WPM → 0.39 base). The result is
+ * then × the tier's paid multiplier (free=1, paid tiers pay proportionally more).
+ */
+function typeReward(wpm: number, tier: number): number {
+  const { baseReward, baseWpm, stepWpm, tierRewardMult } = config.games.type;
+  const x = Math.min(Math.max(0, wpm), baseWpm); // clamp: x >= baseWpm earns the full base
+  const base = baseReward * Math.pow(2, (x - baseWpm) / stepWpm);
+  const mult = tierRewardMult[tier] ?? 1;
+  return round2(base * mult);
 }
 
 export async function startType(
@@ -52,7 +59,11 @@ export async function startType(
     await deleteSession(session.id);
     throw e;
   }
-  const startedAt = Date.now();
+  // Start the clock in the FUTURE: the client shows a get-ready countdown over the
+  // (readable) passage, and the reward timer only begins once it hits zero — so the
+  // breather + the CC-burn round-trip aren't counted against the racer's time.
+  const countdownMs = Math.max(0, config.games.type.countdownSec * 1000);
+  const startedAt = Date.now() + countdownMs;
   session.para!.startedAt = startedAt;
   await saveSession(session);
 
@@ -62,15 +73,18 @@ export async function startType(
     text: para.text,
     difficulty: para.difficulty,
     startedAtMs: startedAt,
+    countdownMs,
     reAttemptsLeft,
   };
 }
 
 /**
  * Spend one free re-attempt on a paid entry: serve a FRESH paragraph (same
- * difficulty), no CC charge, and restart the clock. Only allowed once the current
- * race is finished and while retries remain. The reward top-up (best run only) is
- * settled on the next submit, so a re-attempt can raise your DC but never farm it.
+ * difficulty), no CC charge, and restart the clock (with the same get-ready
+ * countdown). Works both AFTER a finished race (chase a better score) and MID-race
+ * (a "restart" if you fumble) — either way it costs one retry from the tier's
+ * budget. The reward top-up (best run only) is settled on the next submit, so a
+ * re-attempt can raise your DC but never farm it.
  */
 export async function reAttemptType(
   actor: { email: string; name: string },
@@ -84,16 +98,14 @@ export async function reAttemptType(
   if (session.kind !== "type" || !session.para) {
     throw new LedgerError("WRONG_TEXT", "Wrong game type.");
   }
-  if (session.status === "active") {
-    throw new LedgerError("RACE_IN_PROGRESS", "Finish your current race before re-attempting.");
-  }
   if ((session.reAttemptsLeft ?? 0) <= 0) {
     throw new LedgerError("NO_REATTEMPTS", "No re-attempts left on this entry.");
   }
 
   const difficulty = config.games.type.tierDifficulty[session.tier] ?? 5;
   const para = await pickParagraph(difficulty);
-  const startedAt = Date.now();
+  const countdownMs = Math.max(0, config.games.type.countdownSec * 1000);
+  const startedAt = Date.now() + countdownMs;
   session.reAttemptsLeft = (session.reAttemptsLeft ?? 0) - 1;
   session.status = "active";
   session.para = { id: para.id, text: para.text, difficulty: para.difficulty, startedAt };
@@ -105,6 +117,7 @@ export async function reAttemptType(
     text: para.text,
     difficulty: para.difficulty,
     startedAtMs: startedAt,
+    countdownMs,
     reAttemptsLeft: session.reAttemptsLeft,
   };
 }
@@ -150,7 +163,7 @@ export async function submitType(
   // retry can raise your DC toward your best but can never farm extra.
   const newBest = Math.max(session.bestWpm ?? 0, wpm);
   const alreadyMinted = round2(session.totalReward ?? 0);
-  const deserved = typeReward(newBest);
+  const deserved = typeReward(newBest, session.tier);
   const topUp = Math.max(0, round2(deserved - alreadyMinted));
 
   let minted = 0;

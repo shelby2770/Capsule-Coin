@@ -49,6 +49,8 @@ export type Member = {
   banned: boolean;
   // First-login story mode: ISO time the member finished the DC intro (null = pending).
   onboardedAt: string | null;
+  // Arcade intro story: ISO time the member finished the Arcade intro (null = pending).
+  arcadeOnboardedAt: string | null;
 };
 
 export type OfferType = "SELL" | "BUY";
@@ -231,6 +233,7 @@ function normalizeState(s: LedgerState): LedgerState {
     if (m.graceUntil === undefined) m.graceUntil = null;
     if (typeof m.banned !== "boolean") m.banned = false;
     if (m.onboardedAt === undefined) m.onboardedAt = null;
+    if (m.arcadeOnboardedAt === undefined) m.arcadeOnboardedAt = null;
   }
   for (const t of transactions) {
     if (t.currency !== "DC") t.currency = "CC";
@@ -301,6 +304,7 @@ const MEMBER_HEADERS = [
   "Grace Until (UTC)",
   "Banned",
   "Onboarded At (UTC)",
+  "Arcade Onboarded At (UTC)",
 ];
 const OFFER_HEADERS = [
   "ID",
@@ -373,6 +377,7 @@ function parseMembers(wb: ExcelJS.Workbook): Member[] {
       graceUntil: toStrOrNull(rawCell(row, 13)),
       banned: toBool(rawCell(row, 14)),
       onboardedAt: toStrOrNull(rawCell(row, 15)),
+      arcadeOnboardedAt: toStrOrNull(rawCell(row, 16)),
     });
   });
   return out;
@@ -573,7 +578,7 @@ async function buildWorkbook(next: LedgerState): Promise<ExcelJS.Workbook> {
   // Members
   const ms = wb.addWorksheet("Members", { views: [{ state: "frozen", ySplit: 1 }] });
   ms.addRow(MEMBER_HEADERS);
-  [34, 26, 16, 12, 10, 26, 26, 14, 16, 10, 18, 14, 26, 10, 26].forEach(
+  [34, 26, 16, 12, 10, 26, 26, 14, 16, 10, 18, 14, 26, 10, 26, 26].forEach(
     (w, i) => (ms.getColumn(i + 1).width = w),
   );
   for (const m of next.members) {
@@ -593,6 +598,7 @@ async function buildWorkbook(next: LedgerState): Promise<ExcelJS.Workbook> {
       m.graceUntil ?? "",
       m.banned ?? false,
       m.onboardedAt ?? "",
+      m.arcadeOnboardedAt ?? "",
     ]);
   }
   styleHeader(ms);
@@ -768,6 +774,7 @@ function ensureMemberDraft(
       graceUntil: null,
       banned: false,
       onboardedAt: null,
+      arcadeOnboardedAt: null,
     };
     draft.members.push(m);
   }
@@ -984,6 +991,16 @@ export async function markOnboarded(email: string): Promise<{ onboardedAt: strin
     const m = ensureMemberDraft(draft, lower, allowlistEntry(lower)?.name || lower);
     if (!m.onboardedAt) m.onboardedAt = new Date().toISOString();
     return { onboardedAt: m.onboardedAt };
+  });
+}
+
+/** Mark the Arcade intro story as seen (idempotent — set once). */
+export async function markArcadeOnboarded(email: string): Promise<{ arcadeOnboardedAt: string }> {
+  const lower = email.trim().toLowerCase();
+  return mutate((draft) => {
+    const m = ensureMemberDraft(draft, lower, allowlistEntry(lower)?.name || lower);
+    if (!m.arcadeOnboardedAt) m.arcadeOnboardedAt = new Date().toISOString();
+    return { arcadeOnboardedAt: m.arcadeOnboardedAt };
   });
 }
 
@@ -2031,6 +2048,7 @@ export async function mineStatus(email: string): Promise<MiningStatus> {
         graceUntil: null,
         banned: false,
         onboardedAt: null,
+        arcadeOnboardedAt: null,
       };
   applyDailyReset(m, now);
 
@@ -2249,6 +2267,7 @@ export async function arcadeGate(email: string): Promise<ArcadeGate> {
         graceUntil: null,
         banned: false,
         onboardedAt: null,
+        arcadeOnboardedAt: null,
       };
   applyDailyReset(m, now);
   return {
