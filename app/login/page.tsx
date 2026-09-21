@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { signInWithPopup, GoogleAuthProvider } from "firebase/auth";
 import { auth } from "@/lib/firebase/client";
 import { useAuth, TRUSTED_KEY } from "@/components/AuthProvider";
+import { isOrbitaxEmail } from "@/lib/domain";
 import { CoinLogo } from "@/components/CoinLogo";
 import {
   ArrowRight,
@@ -44,7 +45,10 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (status === "member" && !locked) router.replace("/dashboard");
-  }, [status, locked, router]);
+    // Non-members with an @orbitax.com address get the read-only guest tour instead
+    // of the dead-end — a colleague can see how Capsule Coin works before joining.
+    else if (status === "notMember" && isOrbitaxEmail(authEmail)) router.replace("/visit");
+  }, [status, locked, authEmail, router]);
 
   async function googleSignIn() {
     // Never open a popup if a session is already present or one is being established.
@@ -113,19 +117,31 @@ export default function LoginPage() {
             </button>
           </div>
         ) : status === "notMember" ? (
-          <div className="flex flex-col items-center py-4 text-center">
-            <div className="flex h-14 w-14 items-center justify-center rounded-capsule bg-red-500/15 text-red-300">
-              <AlertCircle size={28} />
+          isOrbitaxEmail(authEmail) ? (
+            // Orbitax colleague, not a member — the effect above sends them to the
+            // read-only guest tour; show a brief hand-off rather than the dead-end.
+            <div className="flex flex-col items-center py-6 text-center">
+              <Loader2 size={28} className="animate-spin text-gold-400" />
+              <h2 className="mt-4 text-lg font-semibold text-white">Opening the guest tour…</h2>
+              <p className="mt-2 text-sm text-mute">
+                You&apos;re not a member yet — here&apos;s how Capsule Coin works.
+              </p>
             </div>
-            <h2 className="mt-4 text-lg font-semibold text-white">Not a Capsule member</h2>
-            <p className="mt-2 text-sm text-mute">
-              <span className="text-white">{authEmail}</span> isn&apos;t one of the 16 Capsule
-              members. Ask Adnan to add you, or sign in with a different account.
-            </p>
-            <button onClick={() => void signOut()} className="btn-ghost mt-6">
-              <LogOut size={16} /> Sign out
-            </button>
-          </div>
+          ) : (
+            <div className="flex flex-col items-center py-4 text-center">
+              <div className="flex h-14 w-14 items-center justify-center rounded-capsule bg-red-500/15 text-red-300">
+                <AlertCircle size={28} />
+              </div>
+              <h2 className="mt-4 text-lg font-semibold text-white">Not a Capsule member</h2>
+              <p className="mt-2 text-sm text-mute">
+                <span className="text-white">{authEmail}</span> isn&apos;t one of the 16 Capsule
+                members. Ask Adnan to add you, or sign in with a different account.
+              </p>
+              <button onClick={() => void signOut()} className="btn-ghost mt-6">
+                <LogOut size={16} /> Sign out
+              </button>
+            </div>
+          )
         ) : status === "signedOut" ? (
           <div className="space-y-5">
             <button

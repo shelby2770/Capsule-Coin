@@ -56,7 +56,8 @@ function Arcade() {
     return () => clearInterval(id);
   }, []);
 
-  const freeLeft = status?.freeRemaining ?? 0;
+  const freeLeft = status?.freeRemaining ?? 0; // shared free play across the arcade games
+  const mineFree = status?.mineFreeRemaining ?? 0; // mining's own free mines (separate budget)
   const reserve = status?.reserveRemaining ?? 0;
   const reservePct = status
     ? Math.max(0, Math.min(100, (reserve / status.supplyCap) * 100))
@@ -73,19 +74,35 @@ function Arcade() {
         </p>
       </div>
 
-      {/* shared free-play banner */}
+      {/* free-play banner — mining and the games have separate free budgets */}
       <div className="dc-card flex flex-wrap items-center gap-3 p-4">
         <div className="text-sm">
           {!status ? (
             <span className="text-mute">Loading…</span>
-          ) : freeLeft > 0 ? (
-            <span className="text-white">
-              You have <span className="text-ember-300">1 free play</span> today — spend it on any game.
-            </span>
           ) : (
-            <span className="text-mute">
-              Free play used today · refills in{" "}
-              <span className="text-white">{fmtCountdown(status.resetsAtMs - now)}</span>. Paid tiers are always open.
+            <span className="text-white">
+              Mining:{" "}
+              {mineFree > 0 ? (
+                <span className="text-ember-300">
+                  {mineFree} free {mineFree === 1 ? "mine" : "mines"}
+                </span>
+              ) : (
+                <span className="text-mute">used up</span>
+              )}
+              <span className="text-mute"> · </span>
+              Games:{" "}
+              {freeLeft > 0 ? (
+                <span className="text-ember-300">1 free play</span>
+              ) : (
+                <span className="text-mute">used up</span>
+              )}
+              {mineFree <= 0 && freeLeft <= 0 && (
+                <span className="text-mute">
+                  {" "}· refills in{" "}
+                  <span className="text-white">{fmtCountdown(status.resetsAtMs - now)}</span>
+                </span>
+              )}
+              <span className="text-mute"> · paid tiers always open</span>
             </span>
           )}
         </div>
@@ -105,7 +122,7 @@ function Arcade() {
           icon={Pickaxe}
           title="Mining Rig"
           blurb="Draw tokens against the secret vault — every collision forges DC."
-          freeLeft={freeLeft}
+          freeLeft={mineFree}
           resume={false}
           meta=""
           className="sm:col-span-2"

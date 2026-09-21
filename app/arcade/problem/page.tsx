@@ -15,9 +15,10 @@ import type {
   ProblemGate,
   ProblemSubmitResult,
   ProblemCopyResult,
+  ProblemScreenshotResult,
 } from "@/lib/types";
 import { toast } from "sonner";
-import { Code2, Loader2, Timer, Trophy, ArrowRight, Ban, ShieldAlert, Lightbulb, RotateCcw } from "lucide-react";
+import { Code2, Loader2, Timer, Trophy, ArrowRight, Ban, ShieldAlert, Lightbulb, RotateCcw, EyeOff } from "lucide-react";
 
 type Lang = "cpp" | "python";
 
@@ -57,6 +58,10 @@ function ProblemGame() {
   const [result, setResult] = useState<ProblemSubmitResult | null>(null);
   const [banUntil, setBanUntil] = useState(0);
   const [now, setNow] = useState(() => Date.now());
+  // Screenshot deterrent: true while the window is blurred or the tab is hidden —
+  // the statement is blurred out then, so a Snipping-Tool grab captures nothing
+  // useful. Not a ban signal: losing focus (alt-tab, a toast) isn't proof of anything.
+  const [obscured, setObscured] = useState(false);
   const autoSubmittedRef = useRef(false);
   // The answer fields are UNCONTROLLED (refs, not React state) so each keeps its
   // own native, per-element undo history — Ctrl+Z in one never touches the other,
@@ -158,6 +163,67 @@ function ProblemGame() {
     window.addEventListener("beforeunload", h);
     return () => window.removeEventListener("beforeunload", h);
   }, [board, result]);
+
+  // Screenshot deterrent (no ban). Screenshots and the Windows Snipping Tool are
+  // OS-level — the page never receives a keypress or event for them — so we can't
+  // detect or ban them the way we ban copying. What we CAN do is obscure the
+  // statement the instant the window loses focus or the tab is hidden: the Snipping
+  // Tool's Win+Shift+S overlay steals focus and dims the screen, so a grab then
+  // captures a blurred statement. A phone camera or an instant full-screen capture
+  // still wins — this only defeats the casual case, and punishes no one.
+  useEffect(() => {
+    if (!board || result) return;
+    const hide = () => setObscured(true);
+    const show = () => setObscured(false);
+    const onVis = () => (document.hidden ? hide() : show());
+    window.addEventListener("blur", hide);
+    window.addEventListener("focus", show);
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      window.removeEventListener("blur", hide);
+      window.removeEventListener("focus", show);
+      document.removeEventListener("visibilitychange", onVis);
+    };
+  }, [board, result]);
+
+  // Report a detected screenshot key to the server, which bans this member from
+  // Problem Solving (this game only) for banDays and closes the session. Best-effort
+  // and client-driven, like the copy-guard — the ban decision is authoritative server-side.
+  const reportScreenshot = useCallback(async () => {
+    if (!board) return;
+    try {
+      const r = await authedFetch("/api/arcade/problem", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "screenshot", sessionId: board.sessionId }),
+      });
+      if (!r.ok) return;
+      const d = (await r.json()) as ProblemScreenshotResult;
+      if (d.banned) {
+        setBanUntil(d.banUntilMs);
+        setBoard(null);
+      }
+    } catch {
+      /* best-effort */
+    }
+  }, [authedFetch, board]);
+
+  // PrtScn ban. Windows browsers surface the PrtScn keyup (only the keyup, and only
+  // for the physical PrtScn key — never Win+Shift+S, macOS, or a phone). The capture
+  // already happened by keyup, so this is retaliation, not prevention: the instant we
+  // see it, we lock the member out of Problem Solving for banDays.
+  useEffect(() => {
+    if (!board || result) return;
+    let sent = false; // one ban report per mounted problem
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "PrintScreen" || sent) return;
+      sent = true;
+      toast.error("Screenshot detected — you're locked out of Problem Solving.");
+      void reportScreenshot();
+    };
+    window.addEventListener("keyup", onKey);
+    return () => window.removeEventListener("keyup", onKey);
+  }, [board, result, reportScreenshot]);
 
   const tiers: TierOption[] = useMemo(() => {
     const fees = status?.tierFees ?? [20, 50, 100];
@@ -304,7 +370,7 @@ function ProblemGame() {
           </div>
           <h1 className="mt-4 font-display text-2xl font-semibold text-white">Locked out</h1>
           <p className="mt-2 text-sm text-mute">
-            You&apos;re banned from Problem Solving for copying the problem statement. Access returns on
+            You&apos;re banned from Problem Solving for copying or screenshotting the problem statement. Access returns on
           </p>
           <p className="mt-1 font-semibold text-white">{new Date(banUntil).toUTCString()}</p>
           <p className="mt-2 text-xs text-mute">
@@ -345,7 +411,7 @@ function ProblemGame() {
           rules={[
             "You get 5 minutes on a server-side clock — it keeps ticking even if you step away, and auto-submits your work when it hits zero.",
             "Sketch your approach in the notepad, and add C++ or Python code if time allows — Tab indents, and starter boilerplate is ready for you.",
-            "The statement is copy-protected — you're free to read it, but copying large parts of it locks you out of this game for 3 days.",
+            "The statement is copy- and screenshot-protected — read it freely, but copying large parts of it, or taking a screenshot, locks you out of this game for 3 days.",
           ]}
           tiers={tiers}
           busy={starting}
@@ -379,18 +445,29 @@ function ProblemGame() {
             </div>
           </div>
 
-          {/* problem statement (copy-guarded) */}
+          {/* problem statement (copy-guarded + screenshot-deterrent) */}
           <div className="dc-card p-5">
             <div className="mb-2 flex items-center gap-1.5 text-[11px] uppercase tracking-wider text-mute">
-              <ShieldAlert size={13} className="text-ember-400" /> Copy-protected — reading only
+              <ShieldAlert size={13} className="text-ember-400" /> Copy- &amp; screenshot-protected — reading only
             </div>
-            <div
-              onCopy={onCopyAttempt}
-              onCut={onCopyAttempt}
-              onContextMenu={(e) => e.preventDefault()}
-              className="whitespace-pre-wrap break-words text-[15px] leading-relaxed text-white/90"
-            >
-              {board.statement}
+            <div className="relative">
+              <div
+                onCopy={onCopyAttempt}
+                onCut={onCopyAttempt}
+                onContextMenu={(e) => e.preventDefault()}
+                className={`select-none whitespace-pre-wrap break-words text-[15px] leading-relaxed text-white/90 transition duration-150 ${
+                  obscured ? "pointer-events-none blur-lg" : ""
+                }`}
+              >
+                {board.statement}
+              </div>
+              {obscured && (
+                <div className="absolute inset-0 flex items-center justify-center rounded-xl bg-ink-900/60 text-center backdrop-blur-sm">
+                  <span className="flex items-center gap-2 text-sm text-mute">
+                    <EyeOff size={15} className="text-ember-400" /> Hidden while the window is inactive
+                  </span>
+                </div>
+              )}
             </div>
           </div>
 

@@ -54,8 +54,8 @@ const STEPS: Step[] = [
   },
   {
     icon: Ticket,
-    title: "One free play a day — or pay to go bigger",
-    body: "You get one free play each day, shared across mining and every game — pick your favourite. Want more? Burn CC to unlock higher tiers with bigger DC rewards. Wins mint DC from the shared reserve, so the supply stays capped.",
+    title: "Free every day — or pay to go bigger",
+    body: "Mining keeps its own free draws each day. On top of that, the four games share one free play a day — pick your favourite. Want more? Burn CC to unlock higher tiers with bigger DC rewards. Every win mints DC from the shared reserve, so the supply stays capped.",
   },
 ];
 

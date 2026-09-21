@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/components/AuthProvider";
+import { isOrbitaxEmail } from "@/lib/domain";
 import { useTransfers } from "@/lib/useTransfers";
 import { useNegotiations } from "@/lib/useNegotiations";
 import { CoinLogo } from "@/components/CoinLogo";
@@ -117,8 +118,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (status === "signedOut" || (status === "member" && locked)) {
       router.replace("/login");
+    } else if (status === "notMember" && isOrbitaxEmail(email)) {
+      // Orbitax colleague who isn't a member → the read-only guest tour.
+      router.replace("/visit");
     }
-  }, [status, locked, router]);
+  }, [status, locked, email, router]);
 
   // First load (auth + member resolving): show the skeleton shell.
   if (status === "loading") {
@@ -135,6 +139,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   if (status === "notMember") {
+    // Orbitax colleagues are being redirected to /visit by the effect above; show a
+    // quiet spinner meanwhile. Only non-orbitax accounts fall through to the dead-end.
+    if (isOrbitaxEmail(email)) {
+      return (
+        <Centered>
+          <Loader2 size={26} className="animate-spin text-gold-400" />
+        </Centered>
+      );
+    }
     return (
       <Centered>
         <div className="capsule-card max-w-md p-8 text-center">

@@ -43,6 +43,11 @@ export const config = {
       { fee: 50, mines: 10, keyspace: num(process.env.MINING_KEYSPACE_TIER2, 798_000_000) }, // ~12.5 matches, ~5.0 CC/mine — 50/50 net
       { fee: 100, mines: 20, keyspace: num(process.env.MINING_KEYSPACE_TIER3, 798_000_000) }, // ~12.5 matches, ~5.0 CC/mine — 50/50 net (same odds as T2, more mines)
     ] as ReadonlyArray<{ fee: number; mines: number; keyspace: number }>,
+    // Free mines per UTC day — mining's OWN daily allowance, separate from the
+    // arcade games' shared free budget (config.games.freePlaysPerDay). Reset each
+    // UTC day by applyDailyReset. This was folded into the shared games budget when
+    // the Arcade shipped; split back out so mining keeps its own free plays.
+    freePerDay: num(process.env.MINING_FREE_PER_DAY, 3),
   },
   value: {
     k: num(process.env.VALUE_K, 100),
@@ -119,9 +124,10 @@ export const config = {
   // (config.mining.supplyCap), so total DC inflation stays bounded. A paid entry
   // burns CC (tx type BURN), mirroring the pay-to-mine ladder.
   games: {
-    // One free play per UTC day, SHARED across mining + all games — a free member
-    // picks ONE of mining / word / type each day (tracked in Member.freeMinesUsed,
-    // reset by applyDailyReset). Paid plays are unlimited.
+    // One free play per UTC day, shared across the arcade GAMES (word / type /
+    // problem / blitz) — a free member picks ONE game per day (tracked in
+    // Member.freeGamesUsed, reset by applyDailyReset). Mining has its OWN separate
+    // free allowance (config.mining.freePerDay). Paid plays are unlimited.
     freePlaysPerDay: num(process.env.GAMES_FREE_PLAYS_PER_DAY, 1),
     // Pay-to-play ladder: burn CC to play ONE game at a higher tier. Index 0 = tier
     // 1. Tier 0 (free) costs nothing. Mirrors the mining ladder's 20/50/100 CC.

@@ -128,6 +128,7 @@ async function topUp(db, email, amount) {
         createdAt: new Date().toISOString(),
         mineDay: "",
         freeMinesUsed: 0,
+        freeGamesUsed: 0,
         paidTier: 0,
         paidRemaining: 0,
         graceUntil: null,
@@ -140,7 +141,8 @@ async function topUp(db, email, amount) {
     m.verified = true;
     m.banned = false; // never locked out mid-test
     m.graceUntil = null;
-    m.freeMinesUsed = 0; // hand back today's shared free play too
+    m.freeMinesUsed = 0; // hand back today's free mines
+    m.freeGamesUsed = 0; // ...and today's free game play
     tx.set(ref, { json: JSON.stringify(state), updatedAt: new Date().toISOString() });
   });
 }

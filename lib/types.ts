@@ -260,8 +260,9 @@ export type GameKind = "word" | "type" | "problem" | "blitz";
 
 /** Hub status: shared free-play budget, the reserve, and per-game affordances. */
 export type ArcadeStatus = {
-  freeRemaining: number; // free plays left today (shared across mining + games)
+  freeRemaining: number; // free game plays left today (shared across the arcade games)
   freePlaysPerDay: number;
+  mineFreeRemaining: number; // free mines left today — mining's own allowance, separate from games
   reserveRemaining: number; // shared DC mining reserve headroom
   supplyCap: number;
   balance: number; // CC wallet (for affording paid tiers)
@@ -378,6 +379,26 @@ export type ProblemCopyResult = {
   banned: boolean;
   banUntilMs: number; // 0 when not (yet) banned
   copiedRatio: number; // cumulative copied chars / statement length
+};
+
+/** Screenshot-guard response — the server bans immediately on a detected PrtScn. */
+export type ProblemScreenshotResult = {
+  banned: boolean;
+  banUntilMs: number; // 0 when not banned
+};
+
+/**
+ * Aggregate, member-agnostic economy stats for the guest tour (/visit). Exposes
+ * ONLY group-level numbers — never any individual member's balance or history.
+ */
+export type PublicOverview = {
+  members: number; // size of the Capsule group (the allowlist)
+  bdtPerCC: number; // live CC value in BDT (the headline rate)
+  usdPerCC: number; // live CC value in USD
+  change24h: number | null; // 24h % change, or null before 24h of history exists
+  dcReserveRemaining: number; // shared DC reserve headroom left
+  dcSupplyCap: number; // fixed DC supply cap
+  dcInCirculation: number; // cap − reserve (DC forged and still out there)
 };
 
 // ── AI Blitz (rapid-fire AI/ML MCQ) ─────────────────────────────────────────

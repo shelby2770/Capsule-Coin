@@ -111,7 +111,7 @@ export function assertCanStart(
     if (gate.freeRemaining <= 0) {
       throw new LedgerError(
         "NO_FREE_PLAY",
-        "You've used your free play today (across mining + games). Pay to play a higher tier, or come back tomorrow.",
+        "You've used your free game play today. Pay to play a higher tier, or come back tomorrow.",
       );
     }
   } else {
@@ -127,8 +127,8 @@ export function assertCanStart(
 
 /**
  * Each paid tier of a game is playable ONCE per UTC day (per game), resetting
- * daily like the free play. The free tier (0) is already limited by the shared
- * daily budget, so this only guards paid tiers. Throws if already used today.
+ * daily like the free play. The free tier (0) is already limited by the games'
+ * shared daily budget, so this only guards paid tiers. Throws if already used today.
  */
 export async function assertTierNotUsedToday(
   email: string,

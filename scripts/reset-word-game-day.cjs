@@ -32,10 +32,11 @@
  *                       "played today" guard (playedTierToday) counts SESSION docs, not
  *                       ledger rows, so paid tiers 1/2/3 stay locked until these are gone,
  *                       even after the entry fees are refunded. (Free tier is guarded by
- *                       freeMinesUsed, reset separately; its docs are cleared too.)
+ *                       freeGamesUsed — the games' own daily free counter, reset separately;
+ *                       its docs are cleared too. Mining's freeMinesUsed is left untouched.)
  * Balances: a settled row did `from -= amt; to += amt` on its currency; removing
  * it reverses that (`from += amt; to -= amt`), so each member's stored balance
- * still equals the sum of their remaining rows. Free play: freeMinesUsed -> 0.
+ * still equals the sum of their remaining rows. Free play: freeGamesUsed -> 0.
  *
  * Hash chain matches store.appendTransaction: payload =
  *   [seq,type,fromEmail,toEmail,amountCC,offerId,createdAt,memo] joined by "|";
@@ -208,8 +209,8 @@ function rechain(src) {
   if (warnings.length) { console.log("\nWARNINGS:"); warnings.forEach((w) => console.log(`  ! ${w}`)); }
   console.log("");
 
-  const freeToReset = NO_FREE ? [] : (state.members || []).filter((m) => (m.freeMinesUsed || 0) !== 0);
-  console.log(`Free-play reset: ${NO_FREE ? "SKIPPED" : `freeMinesUsed -> 0 for ${freeToReset.length} member(s) currently >0 (all members set to 0)`}`);
+  const freeToReset = NO_FREE ? [] : (state.members || []).filter((m) => (m.freeGamesUsed || 0) !== 0);
+  console.log(`Free-play reset: ${NO_FREE ? "SKIPPED" : `freeGamesUsed -> 0 for ${freeToReset.length} member(s) currently >0 (all members set to 0)`}`);
 
   const remaining = sorted.filter((t) => !targetSet.has(t));
   const rebuilt = rechain(remaining);
@@ -227,8 +228,8 @@ function rechain(src) {
     m.balance = r2(m.balance + d.cc);
     m.dcBalance = Math.max(0, r2(m.dcBalance + d.dc));
   }
-  // Reset free play for everyone
-  if (!NO_FREE) for (const m of state.members || []) m.freeMinesUsed = 0;
+  // Reset the games' free play for everyone (mining's freeMinesUsed is untouched)
+  if (!NO_FREE) for (const m of state.members || []) m.freeGamesUsed = 0;
 
   const next = { ...state, transactions: rebuilt };
   const backupPath = path.join(ROOT, "data", `prod-backup-wordreset-${Date.now()}.json`);

@@ -35,7 +35,7 @@ export async function assertNotProblemBanned(email: string): Promise<void> {
   if (until > 0) {
     throw new LedgerError(
       "PROBLEM_BANNED",
-      `You're locked out of Problem Solving until ${new Date(until).toUTCString()} for copying the problem statement.`,
+      `You're locked out of Problem Solving until ${new Date(until).toUTCString()} for copying or screenshotting the problem statement.`,
     );
   }
 }

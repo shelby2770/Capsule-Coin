@@ -40,7 +40,8 @@ export type Member = {
   createdAt: string; // ISO
   // Mining v2 daily state (reset each UTC day)
   mineDay: string; // UTC yyyy-mm-dd of the current allowance window ("" = needs reset)
-  freeMinesUsed: number; // free plays used today — SHARED across mining + arcade games (see config.games.freePlaysPerDay)
+  freeMinesUsed: number; // free MINES used today — mining's own allowance (config.mining.freePerDay); resets each UTC day
+  freeGamesUsed: number; // free arcade-game plays used today — shared across games (config.games.freePlaysPerDay); resets each UTC day
   paidTier: number; // pay-to-mine packs unlocked today (0..ladder.length)
   paidRemaining: number; // paid attempts left from the last unlocked pack
   // Credit-floor grace / ban state (config.grace). When CC crosses below the soft
@@ -234,6 +235,9 @@ function normalizeState(s: LedgerState): LedgerState {
     if (typeof m.banned !== "boolean") m.banned = false;
     if (m.onboardedAt === undefined) m.onboardedAt = null;
     if (m.arcadeOnboardedAt === undefined) m.arcadeOnboardedAt = null;
+    if (typeof m.freeGamesUsed !== "number" || !Number.isFinite(m.freeGamesUsed)) {
+      m.freeGamesUsed = 0;
+    }
   }
   for (const t of transactions) {
     if (t.currency !== "DC") t.currency = "CC";
@@ -305,6 +309,7 @@ const MEMBER_HEADERS = [
   "Banned",
   "Onboarded At (UTC)",
   "Arcade Onboarded At (UTC)",
+  "Free Games Used",
 ];
 const OFFER_HEADERS = [
   "ID",
@@ -378,6 +383,7 @@ function parseMembers(wb: ExcelJS.Workbook): Member[] {
       banned: toBool(rawCell(row, 14)),
       onboardedAt: toStrOrNull(rawCell(row, 15)),
       arcadeOnboardedAt: toStrOrNull(rawCell(row, 16)),
+      freeGamesUsed: toNum(rawCell(row, 17)),
     });
   });
   return out;
@@ -578,7 +584,7 @@ async function buildWorkbook(next: LedgerState): Promise<ExcelJS.Workbook> {
   // Members
   const ms = wb.addWorksheet("Members", { views: [{ state: "frozen", ySplit: 1 }] });
   ms.addRow(MEMBER_HEADERS);
-  [34, 26, 16, 12, 10, 26, 26, 14, 16, 10, 18, 14, 26, 10, 26, 26].forEach(
+  [34, 26, 16, 12, 10, 26, 26, 14, 16, 10, 18, 14, 26, 10, 26, 26, 16].forEach(
     (w, i) => (ms.getColumn(i + 1).width = w),
   );
   for (const m of next.members) {
@@ -599,6 +605,7 @@ async function buildWorkbook(next: LedgerState): Promise<ExcelJS.Workbook> {
       m.banned ?? false,
       m.onboardedAt ?? "",
       m.arcadeOnboardedAt ?? "",
+      m.freeGamesUsed ?? 0,
     ]);
   }
   styleHeader(ms);
@@ -769,6 +776,7 @@ function ensureMemberDraft(
       createdAt: new Date().toISOString(),
       mineDay: "",
       freeMinesUsed: 0,
+      freeGamesUsed: 0,
       paidTier: 0,
       paidRemaining: 0,
       graceUntil: null,
@@ -1923,6 +1931,7 @@ function applyDailyReset(m: Member, nowMs: number): void {
   if (m.mineDay !== today) {
     m.mineDay = today;
     m.freeMinesUsed = 0;
+    m.freeGamesUsed = 0;
     m.paidTier = 0;
     m.paidRemaining = 0;
   }
@@ -1948,6 +1957,15 @@ function reserveRemaining(s: LedgerState): number {
   }
   const used = Math.max(0, minedDc - convertedDc);
   return round2(config.mining.supplyCap - used);
+}
+
+/**
+ * DC reserve headroom, member-agnostic — exposed for the guest/visitor overview
+ * (lib/overview.ts). Same figure members see via the Arcade, without needing a
+ * member context. Read-only: it never mutates the ledger.
+ */
+export function dcReserveRemaining(s: LedgerState): number {
+  return reserveRemaining(s);
 }
 
 /**
@@ -2043,6 +2061,7 @@ export async function mineStatus(email: string): Promise<MiningStatus> {
         createdAt: new Date().toISOString(),
         mineDay: "",
         freeMinesUsed: 0,
+        freeGamesUsed: 0,
         paidTier: 0,
         paidRemaining: 0,
         graceUntil: null,
@@ -2053,13 +2072,13 @@ export async function mineStatus(email: string): Promise<MiningStatus> {
   applyDailyReset(m, now);
 
   const reserve = reserveRemaining(s);
-  const freeRemaining = Math.max(0, config.games.freePlaysPerDay - m.freeMinesUsed);
+  const freeRemaining = Math.max(0, config.mining.freePerDay - m.freeMinesUsed);
   const hasAttempt = freeRemaining > 0 || m.paidRemaining > 0;
   const standing = effectiveStanding(m, now);
 
   return {
     freeRemaining,
-    freePerDay: config.games.freePlaysPerDay,
+    freePerDay: config.mining.freePerDay,
     paidRemaining: m.paidRemaining,
     tier: m.paidTier,
     nextTier: nextTierFor(m),
@@ -2087,7 +2106,7 @@ export async function mine(actor: {
     applyDailyReset(me, now);
     assertActive(me, now); // no mining while banned / in credit-floor grace
 
-    const freeLeft = config.games.freePlaysPerDay - me.freeMinesUsed;
+    const freeLeft = config.mining.freePerDay - me.freeMinesUsed;
     const paid = freeLeft <= 0;
     if (paid && me.paidRemaining <= 0) {
       throw new LedgerError(
@@ -2144,7 +2163,7 @@ export async function mine(actor: {
       capped: hitCap && reward >= config.mining.rewardCap,
       balance: me.balance,
       dcBalance: me.dcBalance,
-      freeRemaining: Math.max(0, config.games.freePlaysPerDay - me.freeMinesUsed),
+      freeRemaining: Math.max(0, config.mining.freePerDay - me.freeMinesUsed),
       paidRemaining: me.paidRemaining,
       reserveRemaining: round2(reserve - reward),
     };
@@ -2162,7 +2181,7 @@ export async function buyMiningPack(actor: {
     applyDailyReset(me, now);
     assertActive(me, now); // no pack purchases while banned / in credit-floor grace
 
-    if (config.games.freePlaysPerDay - me.freeMinesUsed > 0) {
+    if (config.mining.freePerDay - me.freeMinesUsed > 0) {
       throw new LedgerError("FREE_LEFT", "Use your free mines first.");
     }
     if (me.paidRemaining > 0) {
@@ -2215,8 +2234,9 @@ export async function buyMiningPack(actor: {
 // (free counter or a CC burn) and minting the DC prize (reserve-capped).
 
 export type ArcadeGate = {
-  freeRemaining: number; // free plays left today (shared with mining)
+  freeRemaining: number; // free game plays left today (shared across games; separate from mining)
   freePlaysPerDay: number;
+  mineFreeRemaining: number; // free MINES left today — mining's own allowance (for the hub's Mining card)
   reserveRemaining: number; // shared DC mining reserve headroom
   supplyCap: number;
   balance: number; // CC wallet (for affording paid tiers)
@@ -2234,9 +2254,9 @@ export type GameAward = {
   reserveRemaining: number;
 };
 
-/** A free play is available while the shared daily counter is under the budget. */
+/** A free game play is available while the games' daily counter is under the budget. */
 function hasFreePlay(m: Member): boolean {
-  return m.freeMinesUsed < config.games.freePlaysPerDay;
+  return m.freeGamesUsed < config.games.freePlaysPerDay;
 }
 
 /**
@@ -2262,6 +2282,7 @@ export async function arcadeGate(email: string): Promise<ArcadeGate> {
         createdAt: new Date().toISOString(),
         mineDay: "",
         freeMinesUsed: 0,
+        freeGamesUsed: 0,
         paidTier: 0,
         paidRemaining: 0,
         graceUntil: null,
@@ -2271,8 +2292,9 @@ export async function arcadeGate(email: string): Promise<ArcadeGate> {
       };
   applyDailyReset(m, now);
   return {
-    freeRemaining: Math.max(0, config.games.freePlaysPerDay - m.freeMinesUsed),
+    freeRemaining: Math.max(0, config.games.freePlaysPerDay - m.freeGamesUsed),
     freePlaysPerDay: config.games.freePlaysPerDay,
+    mineFreeRemaining: Math.max(0, config.mining.freePerDay - m.freeMinesUsed),
     reserveRemaining: reserveRemaining(s),
     supplyCap: config.mining.supplyCap,
     balance: round2(m.balance),
@@ -2304,10 +2326,10 @@ export async function spendGamePlay(
       if (!hasFreePlay(me)) {
         throw new LedgerError(
           "NO_FREE_PLAY",
-          "You've used your free play today (across mining + games). Pay to play a higher tier, or come back tomorrow.",
+          "You've used your free game play today. Pay to play a higher tier, or come back tomorrow.",
         );
       }
-      me.freeMinesUsed += 1;
+      me.freeGamesUsed += 1;
       return { mode: "free", fee: 0, balance: round2(me.balance) };
     }
 
@@ -2349,9 +2371,9 @@ export async function refundGamePlay(
     applyDailyReset(me, Date.now());
 
     if (tier <= 0) {
-      // Give back today's shared free play (floor at 0 — a day rollover already
+      // Give back today's free game play (floor at 0 — a day rollover already
       // reset it, in which case there's nothing to return).
-      me.freeMinesUsed = Math.max(0, me.freeMinesUsed - 1);
+      me.freeGamesUsed = Math.max(0, me.freeGamesUsed - 1);
       return { mode: "free", refunded: 0, balance: round2(me.balance) };
     }
 
@@ -2783,6 +2805,7 @@ export async function importLedger(
         m.lastMinedAt = null;
         m.mineDay = "";
         m.freeMinesUsed = 0;
+        m.freeGamesUsed = 0;
         m.paidTier = 0;
         m.paidRemaining = 0;
       }

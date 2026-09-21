@@ -15,7 +15,13 @@ import {
   type GameSession,
 } from "@/lib/games/sessions";
 import { chatJson } from "@/lib/openrouter";
-import type { ProblemBoard, ProblemGate, ProblemSubmitResult, ProblemCopyResult } from "@/lib/types";
+import type {
+  ProblemBoard,
+  ProblemGate,
+  ProblemSubmitResult,
+  ProblemCopyResult,
+  ProblemScreenshotResult,
+} from "@/lib/types";
 
 /** Starter code shown in the editor per language. */
 const BOILERPLATE = {
@@ -174,6 +180,29 @@ export async function reportCopy(
   }
   await saveSession(session);
   return { banned: false, banUntilMs: 0, copiedRatio: round2(ratio) };
+}
+
+/**
+ * Screenshot-guard. Windows browsers surface the PrtScn keyup (and only for that
+ * physical key — never the Snipping Tool, macOS, or a phone camera), so the client
+ * reports it here. Per the product decision, ANY detected screenshot immediately
+ * bans the member from THIS game (not the account) for banDays and closes the
+ * session. Best-effort — reporting is client-driven and post-capture — but the ban
+ * decision is authoritative here.
+ */
+export async function reportScreenshot(
+  actor: { email: string },
+  sessionId: string,
+): Promise<ProblemScreenshotResult> {
+  const session = await loadOwned(actor, sessionId);
+  if (session.status !== "active") {
+    const until = await problemBanUntil(actor.email);
+    return { banned: until > 0, banUntilMs: until };
+  }
+  session.status = "abandoned";
+  await saveSession(session);
+  const banUntilMs = await banFromProblem(actor.email);
+  return { banned: true, banUntilMs };
 }
 
 /** One scored rubric line, surfaced to the player so the mark is transparent. */
