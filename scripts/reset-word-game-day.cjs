@@ -2,26 +2,37 @@
 /*
  * Reset ONE day of Guess-the-Word activity: remove that day's word-game ledger
  * rows (and, by default, that day's DC<->CC conversions), reverse their balance
- * effects, re-sequence + re-hash the chain, and give every member a fresh daily
- * free play. Use after changing the word-reward curve to wipe the day's plays so
- * everyone can replay under the new rules.
+ * effects, re-sequence + re-hash the chain, delete that day's word session docs,
+ * and give every member a fresh daily free play. Use after changing the word-
+ * reward curve to wipe the day's plays so everyone can replay under the new rules.
  *
  *   node scripts/reset-word-game-day.cjs                       # dry run (default)
  *   node scripts/reset-word-game-day.cjs --commit              # apply (backs up first)
  *   node scripts/reset-word-game-day.cjs --day 2026-09-20      # a specific UTC day
  *   node scripts/reset-word-game-day.cjs --doc capsule_test --commit   # test namespace
+ *   node scripts/reset-word-game-day.cjs --sessions-only --commit   # ONLY clear the paid-tier guards
  *
  * Flags:
- *   --commit        write to Firestore (default is a dry run that writes nothing)
- *   --day <UTC>     UTC calendar day to target (YYYY-MM-DD; default = today UTC)
- *   --doc <id>      ledger doc id (default "state"; e.g. "capsule_test")
- *   --no-convert    do NOT remove/reverse that day's DC<->CC conversions
- *   --no-free       do NOT reset members' daily free play
+ *   --commit         write to Firestore (default is a dry run that writes nothing)
+ *   --day <UTC>      UTC calendar day to target (YYYY-MM-DD; default = today UTC)
+ *   --doc <id>       ledger doc id (default "state"; e.g. "capsule_test")
+ *   --sessions-only  ONLY delete that day's word session docs (see below); touches
+ *                    NO ledger rows and NO balances — use when the entry fees /
+ *                    rewards were already reversed and you just need paid tiers
+ *                    replayable again.
+ *   --no-convert     do NOT remove/reverse that day's DC<->CC conversions
+ *   --no-sessions    do NOT delete that day's word session docs
+ *   --no-free        do NOT reset members' daily free play
  *
  * What's removed (by createdAt on the target UTC day):
  *   - word entry fees   BURN rows whose memo contains "word game"  -> refund CC
  *   - word rewards      GAME rows whose memo contains "word game"  -> claw back DC (clamp >=0)
  *   - conversions       CONVERT rows (both legs)                    -> reverse CC + DC legs
+ *   - word sessions     gameSessions docs (kind "word") that day    -> deleted. The per-tier
+ *                       "played today" guard (playedTierToday) counts SESSION docs, not
+ *                       ledger rows, so paid tiers 1/2/3 stay locked until these are gone,
+ *                       even after the entry fees are refunded. (Free tier is guarded by
+ *                       freeMinesUsed, reset separately; its docs are cleared too.)
  * Balances: a settled row did `from -= amt; to += amt` on its currency; removing
  * it reverses that (`from += amt; to -= amt`), so each member's stored balance
  * still equals the sum of their remaining rows. Free play: freeMinesUsed -> 0.
@@ -47,11 +58,40 @@ const opt = (n) => { const i = argv.indexOf(`--${n}`); return i >= 0 ? argv[i + 
 const DOC = opt("doc") || process.env.LEDGER_DOC_ID || "state";
 const COMMIT = flag("commit");
 const NO_CONVERT = flag("no-convert");
+const NO_SESSIONS = flag("no-sessions");
 const NO_FREE = flag("no-free");
+const SESSIONS_ONLY = flag("sessions-only");
 const DAY = opt("day") || new Date().toISOString().slice(0, 10); // UTC calendar day
+const SESSIONS_COL = (DOC === "state" ? "" : `${DOC}__`) + "gameSessions"; // same namespacing as lib/games/common
 const r2 = (x) => Math.round((Number(x || 0) + Number.EPSILON) * 100) / 100;
-const dayOf = (iso) => new Date(Date.parse(iso)).toISOString().slice(0, 10); // UTC day of a tx
+const dayOf = (iso) => new Date(Date.parse(iso)).toISOString().slice(0, 10); // UTC day of a tx (ISO string)
+const dayOfMs = (ms) => new Date(Number(ms)).toISOString().slice(0, 10); // UTC day of a session (ms epoch)
 const isWord = (t) => String(t.memo || "").toLowerCase().includes("word game");
+
+/** Today's (target-day) word session docs — what the per-tier daily guard counts. */
+async function findWordSessions() {
+  const qs = await db.collection(SESSIONS_COL).where("kind", "==", "word").get();
+  return qs.docs.filter((d) => dayOfMs(d.data().createdAt) === DAY);
+}
+/** Delete session docs in Firestore-batch-safe chunks. */
+async function deleteSessions(docs) {
+  let batch = db.batch(), n = 0;
+  for (const d of docs) {
+    batch.delete(d.ref);
+    if (++n % 400 === 0) { await batch.commit(); batch = db.batch(); }
+  }
+  if (n % 400 !== 0) await batch.commit();
+}
+/** Print the day's word sessions with a per-tier tally. */
+function listSessions(docs) {
+  const byTier = {};
+  for (const d of docs) {
+    const s = d.data();
+    byTier[s.tier] = (byTier[s.tier] || 0) + 1;
+    console.log(`  ${String(s.email || "-").padEnd(32)} tier ${s.tier}  ${String(s.status).padEnd(9)} ${new Date(Number(s.createdAt)).toISOString()}`);
+  }
+  if (docs.length) console.log(`  -> ${Object.keys(byTier).sort().map((t) => `tier ${t}: ${byTier[t]}`).join(", ")}`);
+}
 
 /** Recompute a clean hash chain over ordered source txs (matches store.appendTransaction). */
 function rechain(src) {
@@ -72,6 +112,24 @@ function rechain(src) {
 }
 
 (async () => {
+  // --sessions-only: clear just the day's word session docs (the per-tier "played
+  // today" guard) — no ledger reads/writes, no balance changes. Use when the entry
+  // fees / rewards were already reversed and you only need paid tiers replayable.
+  if (SESSIONS_ONLY) {
+    console.log(`sessions collection: ${SESSIONS_COL}  | target UTC day: ${DAY}`);
+    console.log(`Mode: ${COMMIT ? "COMMIT" : "DRY RUN (no writes)"}  (ledger untouched in --sessions-only)\n`);
+    const wordSessions = await findWordSessions();
+    console.log(`Word sessions on ${DAY} (delete -> clears the per-tier daily guard): ${wordSessions.length}`);
+    listSessions(wordSessions);
+    if (!COMMIT) { console.log("\nDRY RUN — nothing written. Re-run with --commit to apply."); process.exit(0); }
+    if (!wordSessions.length) { console.log("\nNo sessions to delete. Done."); process.exit(0); }
+    await deleteSessions(wordSessions);
+    const left = (await findWordSessions()).length;
+    console.log(`\ndeleted ${wordSessions.length} word session doc(s) from ${SESSIONS_COL}.`);
+    console.log(`verify: word sessions on ${DAY} remaining = ${left}`);
+    process.exit(left === 0 ? 0 : 1);
+  }
+
   const ref = db.collection("ledger").doc(DOC);
   const snap = await ref.get();
   if (!snap.exists) throw new Error(`No ledger/${DOC}`);
@@ -102,7 +160,19 @@ function rechain(src) {
   if (!NO_CONVERT) listRows("Conversions (CONVERT, reverse both legs)", converts);
   console.log("");
 
-  if (targets.length === 0 && NO_FREE) {
+  // Word session docs from the target day — the per-tier "played today" guard counts
+  // these (not ledger rows), so paid tiers stay locked until they're deleted.
+  let wordSessions = [];
+  if (!NO_SESSIONS) {
+    wordSessions = await findWordSessions();
+    console.log(`Word sessions on ${DAY} (delete -> clears the per-tier daily guard): ${wordSessions.length}`);
+    listSessions(wordSessions);
+    console.log("");
+  } else {
+    console.log("Word sessions: SKIPPED (--no-sessions)\n");
+  }
+
+  if (targets.length === 0 && wordSessions.length === 0 && NO_FREE) {
     console.log("Nothing to do. Exiting.");
     process.exit(0);
   }
@@ -168,6 +238,12 @@ function rechain(src) {
   await ref.set({ json: JSON.stringify(next), updatedAt: new Date().toISOString() });
   console.log(`written to ledger/${DOC}.`);
 
+  // Delete the word session docs so the per-tier "played today" guard resets.
+  if (!NO_SESSIONS && wordSessions.length) {
+    await deleteSessions(wordSessions);
+    console.log(`deleted ${wordSessions.length} word session doc(s) from ${SESSIONS_COL}.`);
+  }
+
   // Verify chain + seq
   const after = JSON.parse((await ref.get()).data().json).transactions;
   let prev = "GENESIS", chainOk = true;
@@ -179,6 +255,7 @@ function rechain(src) {
   }
   const seqOk = after.every((t, i) => t.seq === i + 1);
   const noneLeft = !after.some((t) => targetSet.has(t) || (dayOf(t.createdAt) === DAY && ((t.type === "GAME" && isWord(t)) || (t.type === "BURN" && isWord(t)))));
-  console.log(`verify: txs=${after.length} (expect ${rebuilt.length}); chain valid=${chainOk}; seq contiguous=${seqOk}; word rows gone=${noneLeft}`);
-  process.exit(chainOk && seqOk ? 0 : 1);
+  const sessOk = NO_SESSIONS ? true : (await findWordSessions()).length === 0;
+  console.log(`verify: txs=${after.length} (expect ${rebuilt.length}); chain valid=${chainOk}; seq contiguous=${seqOk}; word rows gone=${noneLeft}; word sessions gone=${sessOk}`);
+  process.exit(chainOk && seqOk && sessOk ? 0 : 1);
 })().catch((e) => { console.error("ERR:", (e && e.stack) || e); process.exit(1); });

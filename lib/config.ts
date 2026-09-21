@@ -146,9 +146,9 @@ export const config = {
       // multiplier): a FIRST-guess solve pays baseReward; from the 2nd guess on it
       // drops to secondChanceReward and then halves each extra guess. This makes a
       // clean first solve far more valuable than a lucky late one.
-      //   1 guess = baseReward (100), 2 = secondChanceReward (10), 3 = 5, 4 = 2.5 …
+      //   1 guess = baseReward (100), 2 = secondChanceReward (15), 3 = 7.5, 4 = 3.75 …
       baseReward: num(process.env.GAMES_WORD_BASE_REWARD, 100),
-      secondChanceReward: num(process.env.GAMES_WORD_SECOND_CHANCE_REWARD, 10),
+      secondChanceReward: num(process.env.GAMES_WORD_SECOND_CHANCE_REWARD, 15),
       // "Normal" seconds per attempt. If the solve took longer than
       // secPerAttempt × attempts, the reward scales by expected/elapsed, floored
       // at timeFloor (so unusually slow play earns less).
@@ -159,8 +159,8 @@ export const config = {
       tierRewardMult: [
         num(process.env.GAMES_WORD_MULT_FREE, 1),
         num(process.env.GAMES_WORD_MULT_T1, 1.1),
-        num(process.env.GAMES_WORD_MULT_T2, 1.2),
-        num(process.env.GAMES_WORD_MULT_T3, 1.3),
+        num(process.env.GAMES_WORD_MULT_T2, 1.4),
+        num(process.env.GAMES_WORD_MULT_T3, 1.5),
       ] as ReadonlyArray<number>,
       // A word session self-ends after this many seconds, PER TIER [free,1,2,3].
       // The on-screen clock keeps running across leave/return; when it hits the
