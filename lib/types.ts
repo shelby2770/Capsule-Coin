@@ -158,8 +158,9 @@ export type TransactionPublic = {
 export type MiningTier = { index: number; fee: number; mines: number };
 
 export type MiningStatus = {
-  freeRemaining: number;
+  freeRemaining: number; // free mines left today (0 once today's free play went to a game)
   freePerDay: number;
+  freeTrack: "none" | "mining" | "games"; // which track today's single free allowance is locked to
   paidRemaining: number;
   tier: number; // how many pay-to-mine packs unlocked today (0..ladder.length)
   nextTier: MiningTier | null; // next purchasable pack, or null when maxed out
@@ -260,9 +261,10 @@ export type GameKind = "word" | "type" | "problem" | "blitz";
 
 /** Hub status: shared free-play budget, the reserve, and per-game affordances. */
 export type ArcadeStatus = {
-  freeRemaining: number; // free game plays left today (shared across the arcade games)
+  freeRemaining: number; // free game plays left today (0 once today's free play went to mining)
   freePlaysPerDay: number;
-  mineFreeRemaining: number; // free mines left today — mining's own allowance, separate from games
+  freeTrack: "none" | "mining" | "games"; // which track today's single free allowance is locked to
+  mineFreeRemaining: number; // free mines left today (0 once today's free play went to a game)
   reserveRemaining: number; // shared DC mining reserve headroom
   supplyCap: number;
   balance: number; // CC wallet (for affording paid tiers)
@@ -276,6 +278,7 @@ export type ArcadeStatus = {
   mcqRemaining: number; // AI Blitz questions available (reused)
   wordCounts: number[]; // words guessed per tier [free, 1, 2, 3]
   resumable: { kind: GameKind; sessionId: string } | null; // an unfinished game to resume
+  bans: Record<GameKind, number>; // per-game copy/screenshot ban lift time (ms epoch; 0 = not banned)
 };
 
 export type GameLetterState = "correct" | "present" | "absent";
@@ -383,6 +386,17 @@ export type ProblemCopyResult = {
 
 /** Screenshot-guard response — the server bans immediately on a detected PrtScn. */
 export type ProblemScreenshotResult = {
+  banned: boolean;
+  banUntilMs: number; // 0 when not banned
+};
+
+/**
+ * Copy/screenshot guard response for Guess the Word + AI Blitz. There's nothing
+ * legitimate to copy in these games, so ANY copy attempt or detected screenshot
+ * bans the member from THAT game (this game only) — no ratio, unlike the longer
+ * Problem-Solving statement.
+ */
+export type GameGuardResult = {
   banned: boolean;
   banUntilMs: number; // 0 when not banned
 };

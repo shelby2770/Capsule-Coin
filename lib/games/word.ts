@@ -10,6 +10,7 @@ import {
 } from "@/lib/excel/store";
 import { assertValidTier, type GameKind } from "@/lib/games/common";
 import { consumeWords } from "@/lib/games/pools";
+import { assertNotGameBanned, reportGameGuard } from "@/lib/games/bans";
 import {
   createSession,
   getSession,
@@ -19,7 +20,7 @@ import {
   type GameSession,
   type WordItem,
 } from "@/lib/games/sessions";
-import type { WordBoard, WordGuessResult } from "@/lib/types";
+import type { WordBoard, WordGuessResult, GameGuardResult } from "@/lib/types";
 
 export type LetterState = "correct" | "present" | "absent";
 
@@ -182,6 +183,7 @@ export async function startWord(
   tier: number,
 ): Promise<WordBoard> {
   assertValidTier(tier);
+  await assertNotGameBanned(actor.email, "word");
   const gate = await arcadeGate(actor.email);
   assertCanStart(gate, tier);
   await assertTierNotUsedToday(actor.email, "word", tier);
@@ -216,6 +218,19 @@ export async function startWord(
     throw e;
   }
   return wordBoard(session);
+}
+
+/**
+ * Copy/screenshot guard. There's nothing legitimate to copy on the board, so ANY
+ * reported copy attempt or detected PrtScn bans the member from Guess the Word
+ * (this game only) for banDays and abandons the session. Best-effort + client-
+ * driven; the ban decision is authoritative server-side (see reportGameGuard).
+ */
+export function reportWordGuard(
+  actor: { email: string },
+  sessionId: string,
+): Promise<GameGuardResult> {
+  return reportGameGuard(actor, sessionId, "word");
 }
 
 /** Reload a word session's board (for resume/refresh) with an ownership check. */

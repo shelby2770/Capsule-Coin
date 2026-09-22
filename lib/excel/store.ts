@@ -2041,6 +2041,30 @@ function nextTierFor(m: Member): MiningTier | null {
   return t ? { index: m.paidTier, fee: t.fee, mines: t.mines } : null;
 }
 
+/**
+ * The daily FREE allowance is a SINGLE choice split across two mutually-exclusive
+ * tracks: spend it on mining (up to config.mining.freePerDay free mines) OR on the
+ * arcade games (config.games.freePlaysPerDay free plays) — never both. The first
+ * free action of the day locks in the track: once a member takes a free mine
+ * (freeMinesUsed > 0) their free game play is gone, and once they play a free game
+ * (freeGamesUsed > 0) their free mines are gone. Paid mining packs and paid game
+ * tiers are unaffected. Both counters reset each UTC day (applyDailyReset).
+ */
+function freeMinesRemaining(m: Member): number {
+  if (m.freeGamesUsed > 0) return 0; // committed to the games track today
+  return Math.max(0, config.mining.freePerDay - m.freeMinesUsed);
+}
+function freeGamesRemaining(m: Member): number {
+  if (m.freeMinesUsed > 0) return 0; // committed to the mining track today
+  return Math.max(0, config.games.freePlaysPerDay - m.freeGamesUsed);
+}
+/** Which track today's single free allowance is locked to (for the UI copy). */
+function freeTrackOf(m: Member): "none" | "mining" | "games" {
+  if (m.freeMinesUsed > 0) return "mining";
+  if (m.freeGamesUsed > 0) return "games";
+  return "none";
+}
+
 export async function mineStatus(email: string): Promise<MiningStatus> {
   const s = await ensureLoaded();
   const now = Date.now();
@@ -2072,13 +2096,14 @@ export async function mineStatus(email: string): Promise<MiningStatus> {
   applyDailyReset(m, now);
 
   const reserve = reserveRemaining(s);
-  const freeRemaining = Math.max(0, config.mining.freePerDay - m.freeMinesUsed);
+  const freeRemaining = freeMinesRemaining(m); // 0 if today's free play went to a game
   const hasAttempt = freeRemaining > 0 || m.paidRemaining > 0;
   const standing = effectiveStanding(m, now);
 
   return {
     freeRemaining,
     freePerDay: config.mining.freePerDay,
+    freeTrack: freeTrackOf(m),
     paidRemaining: m.paidRemaining,
     tier: m.paidTier,
     nextTier: nextTierFor(m),
@@ -2106,12 +2131,16 @@ export async function mine(actor: {
     applyDailyReset(me, now);
     assertActive(me, now); // no mining while banned / in credit-floor grace
 
-    const freeLeft = config.mining.freePerDay - me.freeMinesUsed;
+    // Free mining is available only while today's single free allowance hasn't
+    // been spent on a game (freeMinesRemaining returns 0 once freeGamesUsed > 0).
+    const freeLeft = freeMinesRemaining(me);
     const paid = freeLeft <= 0;
     if (paid && me.paidRemaining <= 0) {
       throw new LedgerError(
         "NO_ATTEMPTS",
-        "No mining attempts left today — unlock a pay-to-mine pack below.",
+        me.freeGamesUsed > 0
+          ? "You spent today's free play on a game — unlock a pay-to-mine pack below to mine."
+          : "No mining attempts left today — unlock a pay-to-mine pack below.",
       );
     }
 
@@ -2163,7 +2192,7 @@ export async function mine(actor: {
       capped: hitCap && reward >= config.mining.rewardCap,
       balance: me.balance,
       dcBalance: me.dcBalance,
-      freeRemaining: Math.max(0, config.mining.freePerDay - me.freeMinesUsed),
+      freeRemaining: freeMinesRemaining(me),
       paidRemaining: me.paidRemaining,
       reserveRemaining: round2(reserve - reward),
     };
@@ -2181,7 +2210,10 @@ export async function buyMiningPack(actor: {
     applyDailyReset(me, now);
     assertActive(me, now); // no pack purchases while banned / in credit-floor grace
 
-    if (config.mining.freePerDay - me.freeMinesUsed > 0) {
+    // Only block a pack purchase while free mines are actually AVAILABLE — if
+    // today's free play went to a game, mining free is locked (freeMinesRemaining
+    // === 0) and buying a pack is the only way to mine, so don't block it.
+    if (freeMinesRemaining(me) > 0) {
       throw new LedgerError("FREE_LEFT", "Use your free mines first.");
     }
     if (me.paidRemaining > 0) {
@@ -2234,9 +2266,10 @@ export async function buyMiningPack(actor: {
 // (free counter or a CC burn) and minting the DC prize (reserve-capped).
 
 export type ArcadeGate = {
-  freeRemaining: number; // free game plays left today (shared across games; separate from mining)
+  freeRemaining: number; // free game plays left today (0 once today's free play went to mining)
   freePlaysPerDay: number;
-  mineFreeRemaining: number; // free MINES left today — mining's own allowance (for the hub's Mining card)
+  freeTrack: "none" | "mining" | "games"; // which track today's single free allowance is locked to
+  mineFreeRemaining: number; // free MINES left today (0 once today's free play went to a game)
   reserveRemaining: number; // shared DC mining reserve headroom
   supplyCap: number;
   balance: number; // CC wallet (for affording paid tiers)
@@ -2254,9 +2287,13 @@ export type GameAward = {
   reserveRemaining: number;
 };
 
-/** A free game play is available while the games' daily counter is under the budget. */
+/**
+ * A free game play is available while the games' daily counter is under the budget
+ * AND today's single free allowance hasn't already been spent on mining
+ * (freeGamesRemaining returns 0 once freeMinesUsed > 0).
+ */
 function hasFreePlay(m: Member): boolean {
-  return m.freeGamesUsed < config.games.freePlaysPerDay;
+  return freeGamesRemaining(m) > 0;
 }
 
 /**
@@ -2292,9 +2329,10 @@ export async function arcadeGate(email: string): Promise<ArcadeGate> {
       };
   applyDailyReset(m, now);
   return {
-    freeRemaining: Math.max(0, config.games.freePlaysPerDay - m.freeGamesUsed),
+    freeRemaining: freeGamesRemaining(m), // 0 once today's free play went to mining
     freePlaysPerDay: config.games.freePlaysPerDay,
-    mineFreeRemaining: Math.max(0, config.mining.freePerDay - m.freeMinesUsed),
+    freeTrack: freeTrackOf(m),
+    mineFreeRemaining: freeMinesRemaining(m), // 0 once today's free play went to a game
     reserveRemaining: reserveRemaining(s),
     supplyCap: config.mining.supplyCap,
     balance: round2(m.balance),
@@ -2326,7 +2364,9 @@ export async function spendGamePlay(
       if (!hasFreePlay(me)) {
         throw new LedgerError(
           "NO_FREE_PLAY",
-          "You've used your free game play today. Pay to play a higher tier, or come back tomorrow.",
+          me.freeMinesUsed > 0
+            ? "You spent today's free play on mining — pay to play a higher tier, or come back tomorrow."
+            : "You've used your free game play today. Pay to play a higher tier, or come back tomorrow.",
         );
       }
       me.freeGamesUsed += 1;

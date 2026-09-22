@@ -7,6 +7,7 @@ import { LedgerError, arcadeGate, spendGamePlay, awardGameDc } from "@/lib/excel
 import { assertValidTier } from "@/lib/games/common";
 import { assertCanStart } from "@/lib/games/word";
 import { consumeMcqs } from "@/lib/games/pools";
+import { assertNotGameBanned, reportGameGuard } from "@/lib/games/bans";
 import {
   createSession,
   getSession,
@@ -15,7 +16,7 @@ import {
   type McqItem,
 } from "@/lib/games/sessions";
 import { chatJson } from "@/lib/openrouter";
-import type { BlitzStart, BlitzSubmitResult } from "@/lib/types";
+import type { BlitzStart, BlitzSubmitResult, GameGuardResult } from "@/lib/types";
 
 /**
  * Hybrid MCQ sourcing. Default: draw from the seeded pool (accurate, no per-play
@@ -71,6 +72,7 @@ export async function startBlitz(
   if (tier !== 0) {
     throw new LedgerError("TIER_UNAVAILABLE", "AI Blitz is free-tier only.");
   }
+  await assertNotGameBanned(actor.email, "blitz");
   const gate = await arcadeGate(actor.email);
   assertCanStart(gate, 0);
 
@@ -101,6 +103,19 @@ export async function startBlitz(
     startedAtMs: session.mcqStartedAt,
     dcPerCorrect: config.games.blitz.dcPerCorrect,
   };
+}
+
+/**
+ * Copy/screenshot guard. Copying a question to feed an LLM is the cheat, so ANY
+ * reported copy attempt or detected PrtScn bans the member from AI Blitz (this
+ * game only) for banDays and abandons the session. Best-effort + client-driven;
+ * the ban decision is authoritative server-side (see reportGameGuard).
+ */
+export function reportBlitzGuard(
+  actor: { email: string },
+  sessionId: string,
+): Promise<GameGuardResult> {
+  return reportGameGuard(actor, sessionId, "blitz");
 }
 
 export async function submitBlitz(

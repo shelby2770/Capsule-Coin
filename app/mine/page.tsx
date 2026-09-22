@@ -339,6 +339,13 @@ function Mine() {
           <AttemptsBadge status={status} />
         </div>
 
+        {status?.freeTrack === "games" && (
+          <p className="mt-3 rounded-capsule border border-edge bg-ink-800/50 px-3 py-2 text-center text-xs text-mute">
+            You spent today&apos;s free play on a game, so free mining is locked until the
+            daily reset — pay-to-mine packs still work.
+          </p>
+        )}
+
         <div className="mt-4">
           {status && status.standing !== "OK" ? (
             <div className="rounded-capsule border border-ember-500/40 bg-ember-500/10 px-5 py-3 text-center text-sm text-ember-200">

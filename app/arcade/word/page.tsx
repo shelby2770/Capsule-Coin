@@ -13,6 +13,7 @@ import type {
   WordBoard,
   WordGuessResult,
   GameLetterState,
+  GameGuardResult,
 } from "@/lib/types";
 import { toast } from "sonner";
 import {
@@ -24,6 +25,9 @@ import {
   ArrowRight,
   Timer,
   Hash,
+  Ban,
+  ShieldAlert,
+  EyeOff,
 } from "lucide-react";
 import { Portal } from "@/components/Portal";
 
@@ -85,6 +89,10 @@ function WordGame() {
   const [typed, setTyped] = useState("");
   const [busy, setBusy] = useState(false);
   const [banner, setBanner] = useState<string | null>(null);
+  const [banUntil, setBanUntil] = useState(0);
+  // Screenshot deterrent: true while the window is blurred / the tab is hidden — the
+  // board is blurred out then, so a Snipping-Tool grab captures nothing useful.
+  const [obscured, setObscured] = useState(false);
   const [finished, setFinished] = useState<{
     words: number;
     total: number;
@@ -126,6 +134,10 @@ function WordGame() {
         if (!alive) return;
         const s = (await r.json()) as ArcadeStatus;
         setStatus(s);
+        if (s.bans.word > 0) {
+          setBanUntil(s.bans.word); // locked out — show the ban screen, skip resume/intro
+          return;
+        }
         if (s.resumable?.kind === "word") {
           const sr = await authedFetch("/api/arcade/word", {
             method: "POST",
@@ -242,6 +254,7 @@ function WordGame() {
       });
       const d = await r.json();
       if (!r.ok) {
+        if (d.error === "GAME_BANNED") setBanUntil(Date.now() + 1); // trigger the banned screen
         setStartErr(d.message || "Couldn't start the game.");
         return;
       }
@@ -352,6 +365,73 @@ function WordGame() {
     return () => window.removeEventListener("keydown", handler);
   }, [onKey]);
 
+  // Copy/screenshot guard — there's nothing legitimate to copy on the board, so any
+  // attempt bans the member from Guess the Word (this game only) for a few days and
+  // abandons the session. Best-effort + client-driven; the ban decision is
+  // authoritative server-side.
+  const reportGuard = useCallback(async () => {
+    if (!cur) return;
+    try {
+      const r = await authedFetch("/api/arcade/word", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "guard", sessionId: cur.sessionId }),
+      });
+      if (!r.ok) return;
+      const d = (await r.json()) as GameGuardResult;
+      if (d.banned) {
+        setBanUntil(d.banUntilMs);
+        setCur(null);
+      }
+    } catch {
+      /* best-effort */
+    }
+  }, [authedFetch, cur]);
+
+  const onCopyAttempt = useCallback(
+    (e: React.ClipboardEvent) => {
+      e.preventDefault();
+      toast.error("Copying is disabled here — and monitored.");
+      void reportGuard();
+    },
+    [reportGuard],
+  );
+
+  // Screenshot deterrent (no ban): blur the board whenever the window loses focus or
+  // the tab is hidden — the Snipping Tool's overlay steals focus, so a grab then
+  // captures a blurred board. Losing focus isn't proof of anything, so it never bans.
+  useEffect(() => {
+    if (!cur || finished) return;
+    const hide = () => setObscured(true);
+    const show = () => setObscured(false);
+    const onVis = () => (document.hidden ? hide() : show());
+    window.addEventListener("blur", hide);
+    window.addEventListener("focus", show);
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      window.removeEventListener("blur", hide);
+      window.removeEventListener("focus", show);
+      document.removeEventListener("visibilitychange", onVis);
+    };
+  }, [cur, finished]);
+
+  // PrtScn ban. Windows browsers surface the PrtScn keyup (only the keyup, and only
+  // the physical key — never Win+Shift+S, macOS, or a phone). The capture already
+  // happened by keyup, so this is retaliation, not prevention: the instant we see
+  // it, we lock the member out of Guess the Word for a few days.
+  useEffect(() => {
+    if (!cur || finished) return;
+    let sent = false;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "PrintScreen" || sent) return;
+      sent = true;
+      toast.error("Screenshot detected — you're locked out of Guess the Word.");
+      void reportGuard();
+    };
+    window.addEventListener("keyup", onKey);
+    return () => window.removeEventListener("keyup", onKey);
+  }, [cur, finished, reportGuard]);
+
   // Once the current word is solved (last row all-green), suppress the empty
   // "next attempt" row and freeze the attempt counter during the ~1s win
   // celebration — otherwise the board flashes a blank input row before the reward
@@ -361,6 +441,29 @@ function WordGame() {
     !!lastRow && lastRow.feedback.length > 0 && lastRow.feedback.every((f) => f === "correct");
 
   // ── render ──────────────────────────────────────────────────────────────────
+  if (banUntil > 0) {
+    return (
+      <div className="mx-auto max-w-md">
+        <div className="dc-card mt-10 p-7 text-center">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-red-500/15 text-red-300">
+            <Ban size={28} />
+          </div>
+          <h1 className="mt-4 font-display text-2xl font-semibold text-white">Locked out</h1>
+          <p className="mt-2 text-sm text-mute">
+            You&apos;re banned from Guess the Word for copying or screenshotting the game. Access returns on
+          </p>
+          <p className="mt-1 font-semibold text-white">{new Date(banUntil).toUTCString()}</p>
+          <p className="mt-2 text-xs text-mute">
+            This affects Guess the Word only — your account and the other games are unaffected.
+          </p>
+          <button className="btn-ember mt-6 w-full" onClick={() => router.push("/arcade")}>
+            Back to Arcade
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   if (!cur && !showIntro) {
     return (
       <div className="flex h-72 items-center justify-center text-mute">
@@ -387,6 +490,7 @@ function WordGame() {
             "Solve it in as few guesses as you can, and quickly — sharper, faster solves are worth more.",
             "Up to 7 guesses per word. Paid tiers give more words, shown one at a time.",
             "One timed session per play (3–20 minutes by tier) — the clock keeps running if you step away.",
+            "Copying the board or taking a screenshot locks you out of this game for 3 days — just play it straight.",
           ]}
           tiers={tiers}
           busy={starting}
@@ -427,8 +531,16 @@ function WordGame() {
             </div>
           )}
 
-          {/* board */}
-          <div className="dc-card p-4">
+          {/* board (copy-guarded + screenshot-deterrent) */}
+          <div
+            className="dc-card select-none p-4"
+            onCopy={onCopyAttempt}
+            onCut={onCopyAttempt}
+            onContextMenu={(e) => e.preventDefault()}
+          >
+            <div className="mb-2 flex items-center justify-center gap-1.5 text-[11px] uppercase tracking-wider text-mute">
+              <ShieldAlert size={13} className="text-ember-400" /> Copy- &amp; screenshot-protected
+            </div>
             <div className="mb-3 flex items-center justify-center">
               <span className="inline-flex items-center gap-1.5 rounded-full border border-edge bg-ink-800/60 px-3 py-1 text-xs">
                 <Hash size={12} className="text-ember-400" />
@@ -439,23 +551,36 @@ function WordGame() {
                 <span className="text-mute">of {cur.maxAttempts}</span>
               </span>
             </div>
-            <div className="flex max-h-[46vh] flex-col gap-1.5 overflow-y-auto pr-1">
-              {cur.attempts.map((a, ri) => (
-                <Row
-                  key={ri}
-                  letters={a.guess.split("")}
-                  states={a.feedback}
-                  len={cur.wordLength}
-                  win={ri === cur.attempts.length - 1 && a.feedback.every((f) => f === "correct")}
-                />
-              ))}
-              {!finished && !wordSolved && (
-                <Row
-                  letters={typed.toUpperCase().split("")}
-                  states={null}
-                  len={cur.wordLength}
-                  active
-                />
+            <div className="relative">
+              <div
+                className={`flex max-h-[46vh] flex-col gap-1.5 overflow-y-auto pr-1 transition duration-150 ${
+                  obscured ? "pointer-events-none blur-lg" : ""
+                }`}
+              >
+                {cur.attempts.map((a, ri) => (
+                  <Row
+                    key={ri}
+                    letters={a.guess.split("")}
+                    states={a.feedback}
+                    len={cur.wordLength}
+                    win={ri === cur.attempts.length - 1 && a.feedback.every((f) => f === "correct")}
+                  />
+                ))}
+                {!finished && !wordSolved && (
+                  <Row
+                    letters={typed.toUpperCase().split("")}
+                    states={null}
+                    len={cur.wordLength}
+                    active
+                  />
+                )}
+              </div>
+              {obscured && (
+                <div className="absolute inset-0 flex items-center justify-center rounded-xl bg-ink-900/60 text-center backdrop-blur-sm">
+                  <span className="flex items-center gap-2 text-sm text-mute">
+                    <EyeOff size={15} className="text-ember-400" /> Hidden while the window is inactive
+                  </span>
+                </div>
               )}
             </div>
           </div>

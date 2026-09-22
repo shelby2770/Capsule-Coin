@@ -17,6 +17,7 @@ import {
   ArrowRight,
   Play,
   Layers,
+  Lock,
 } from "lucide-react";
 
 function fmtCountdown(ms: number): string {
@@ -74,35 +75,49 @@ function Arcade() {
         </p>
       </div>
 
-      {/* free-play banner — mining and the games have separate free budgets */}
+      {/* free-play banner — ONE free choice a day: 3 free mines OR 1 free game,
+          never both. The first free action locks in the track until the reset. */}
       <div className="dc-card flex flex-wrap items-center gap-3 p-4">
         <div className="text-sm">
           {!status ? (
             <span className="text-mute">Loading…</span>
-          ) : (
+          ) : status.freeTrack === "none" ? (
             <span className="text-white">
-              Mining:{" "}
+              One free play a day:{" "}
+              <span className="text-ember-300">
+                {mineFree} free {mineFree === 1 ? "mine" : "mines"}
+              </span>
+              <span className="text-mute"> or </span>
+              <span className="text-ember-300">1 free game</span>
+              <span className="text-mute"> — your pick. Paid tiers always open.</span>
+            </span>
+          ) : status.freeTrack === "mining" ? (
+            <span className="text-white">
+              You&apos;re mining today —{" "}
               {mineFree > 0 ? (
                 <span className="text-ember-300">
-                  {mineFree} free {mineFree === 1 ? "mine" : "mines"}
+                  {mineFree} free {mineFree === 1 ? "mine" : "mines"} left
                 </span>
               ) : (
-                <span className="text-mute">used up</span>
-              )}
-              <span className="text-mute"> · </span>
-              Games:{" "}
-              {freeLeft > 0 ? (
-                <span className="text-ember-300">1 free play</span>
-              ) : (
-                <span className="text-mute">used up</span>
-              )}
-              {mineFree <= 0 && freeLeft <= 0 && (
-                <span className="text-mute">
-                  {" "}· refills in{" "}
+                <>
+                  <span className="text-mute">free mines used up, refills in </span>
                   <span className="text-white">{fmtCountdown(status.resetsAtMs - now)}</span>
-                </span>
+                </>
               )}
-              <span className="text-mute"> · paid tiers always open</span>
+              <span className="text-mute"> · free games locked till then · paid tiers always open</span>
+            </span>
+          ) : (
+            <span className="text-white">
+              You&apos;re playing games today —{" "}
+              {freeLeft > 0 ? (
+                <span className="text-ember-300">1 free play left</span>
+              ) : (
+                <>
+                  <span className="text-mute">free play used, refills in </span>
+                  <span className="text-white">{fmtCountdown(status.resetsAtMs - now)}</span>
+                </>
+              )}
+              <span className="text-mute"> · free mining locked till then · paid tiers always open</span>
             </span>
           )}
         </div>
@@ -134,6 +149,7 @@ function Arcade() {
           blurb="Wordle-style. Solve fast and in few tries for the biggest DC."
           freeLeft={freeLeft}
           resume={status?.resumable?.kind === "word"}
+          banned={!!status && status.bans.word > 0}
           meta={status ? `${status.wordsRemaining.toLocaleString()} words left` : ""}
           className="sm:col-span-2"
         />
@@ -154,6 +170,7 @@ function Arcade() {
           blurb="Crack a LeetCode-style problem in 5 min. An AI judge scores it for DC."
           freeLeft={freeLeft}
           resume={false}
+          banned={!!status && status.bans.problem > 0}
           meta={status ? `${status.problemsRemaining.toLocaleString()} problems` : ""}
           className="sm:col-span-2 sm:col-start-2"
         />
@@ -164,6 +181,7 @@ function Arcade() {
           blurb="Rapid-fire AI/ML MCQs — 20s each. Every correct answer forges DC."
           freeLeft={freeLeft}
           resume={false}
+          banned={!!status && status.bans.blitz > 0}
           meta={status ? `${status.mcqRemaining.toLocaleString()} questions` : ""}
           className="sm:col-span-2"
         />
@@ -203,6 +221,7 @@ function GameCard({
   meta,
   freeLeft,
   resume,
+  banned,
   className,
 }: {
   href: string;
@@ -212,6 +231,7 @@ function GameCard({
   meta: string;
   freeLeft: number;
   resume: boolean;
+  banned?: boolean;
   className?: string;
 }) {
   return (
@@ -225,7 +245,11 @@ function GameCard({
         <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-ember-500/15 text-ember-400">
           <Icon size={22} />
         </div>
-        {resume ? (
+        {banned ? (
+          <span className="inline-flex items-center gap-1 rounded-full bg-red-500/15 px-2 py-0.5 text-[11px] font-semibold text-red-300">
+            <Lock size={11} /> Locked
+          </span>
+        ) : resume ? (
           <span className="inline-flex items-center gap-1 rounded-full bg-teal-500/15 px-2 py-0.5 text-[11px] font-semibold text-teal-300">
             <Play size={11} /> Resume
           </span>

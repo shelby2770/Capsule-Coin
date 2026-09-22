@@ -9,9 +9,9 @@ import { Portal } from "@/components/Portal";
 import { DarkCoinLogo } from "@/components/DarkCoinLogo";
 import { emitLedgerChange } from "@/lib/ledgerEvents";
 import { formatDC } from "@/lib/format";
-import type { ArcadeStatus, BlitzStart, BlitzSubmitResult } from "@/lib/types";
+import type { ArcadeStatus, BlitzStart, BlitzSubmitResult, GameGuardResult } from "@/lib/types";
 import { toast } from "sonner";
-import { Zap, Loader2, Timer, Trophy, ArrowRight, Check, X } from "lucide-react";
+import { Zap, Loader2, Timer, Trophy, ArrowRight, Check, X, Ban, ShieldAlert, EyeOff } from "lucide-react";
 
 const LETTER = (i: number) => String.fromCharCode(65 + i);
 
@@ -39,6 +39,10 @@ function Blitz() {
   const [result, setResult] = useState<BlitzSubmitResult | null>(null);
   const [submitErr, setSubmitErr] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
+  const [banUntil, setBanUntil] = useState(0);
+  // Screenshot deterrent: true while the window is blurred / the tab is hidden — the
+  // question is blurred out then, so a Snipping-Tool grab captures nothing useful.
+  const [obscured, setObscured] = useState(false);
 
   const chosenRef = useRef<number[]>([]);
   const submittedRef = useRef(false);
@@ -55,7 +59,14 @@ function Blitz() {
       try {
         const r = await authedFetch("/api/arcade");
         if (!alive) return;
-        if (r.ok) setStatus((await r.json()) as ArcadeStatus);
+        if (r.ok) {
+          const s = (await r.json()) as ArcadeStatus;
+          setStatus(s);
+          if (s.bans.blitz > 0) {
+            setBanUntil(s.bans.blitz); // locked out — show the ban screen, skip the intro
+            return;
+          }
+        }
       } catch {
         /* ignore */
       }
@@ -125,6 +136,72 @@ function Blitz() {
     return () => clearInterval(id);
   }, [quiz, idx, result, submitting, submitErr, secPerQuestion, advance]);
 
+  // Copy/screenshot guard — copying a question to feed an LLM is the cheat, so any
+  // attempt bans the member from AI Blitz (this game only) for a few days and
+  // abandons the round. Best-effort + client-driven; the ban decision is
+  // authoritative server-side.
+  const reportGuard = useCallback(async () => {
+    if (!quiz) return;
+    try {
+      const r = await authedFetch("/api/arcade/blitz", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "guard", sessionId: quiz.sessionId }),
+      });
+      if (!r.ok) return;
+      const d = (await r.json()) as GameGuardResult;
+      if (d.banned) {
+        setBanUntil(d.banUntilMs);
+        setQuiz(null);
+      }
+    } catch {
+      /* best-effort */
+    }
+  }, [authedFetch, quiz]);
+
+  const onCopyAttempt = useCallback(
+    (e: React.ClipboardEvent) => {
+      e.preventDefault();
+      toast.error("Copying the question is disabled — and monitored.");
+      void reportGuard();
+    },
+    [reportGuard],
+  );
+
+  // Screenshot deterrent (no ban): blur the question whenever the window loses focus
+  // or the tab is hidden — the Snipping Tool's overlay steals focus, so a grab then
+  // captures a blurred question. Losing focus isn't proof of anything, so no ban.
+  useEffect(() => {
+    if (!quiz || result || submitErr) return;
+    const hide = () => setObscured(true);
+    const show = () => setObscured(false);
+    const onVis = () => (document.hidden ? hide() : show());
+    window.addEventListener("blur", hide);
+    window.addEventListener("focus", show);
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      window.removeEventListener("blur", hide);
+      window.removeEventListener("focus", show);
+      document.removeEventListener("visibilitychange", onVis);
+    };
+  }, [quiz, result, submitErr]);
+
+  // PrtScn ban. Windows browsers surface the PrtScn keyup (only the keyup, and only
+  // the physical key — never Win+Shift+S, macOS, or a phone). The capture already
+  // happened, so this is retaliation: the instant we see it, we lock the member out.
+  useEffect(() => {
+    if (!quiz || result || submitErr) return;
+    let sent = false;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "PrintScreen" || sent) return;
+      sent = true;
+      toast.error("Screenshot detected — you're locked out of AI Blitz.");
+      void reportGuard();
+    };
+    window.addEventListener("keyup", onKey);
+    return () => window.removeEventListener("keyup", onKey);
+  }, [quiz, result, submitErr, reportGuard]);
+
   function pick(opt: number) {
     if (advancingRef.current || locked || result || submitting) return;
     advancingRef.current = true;
@@ -173,6 +250,7 @@ function Blitz() {
       });
       const d = await r.json();
       if (!r.ok) {
+        if (d.error === "GAME_BANNED") setBanUntil(Date.now() + 1); // trigger the banned screen
         setStartErr(d.message || "Couldn't start the quiz.");
         return;
       }
@@ -211,6 +289,29 @@ function Blitz() {
   const barPct = Math.max(0, Math.min(100, ((deadlineRef.current - now) / (secPerQuestion * 1000)) * 100));
 
   // ── render ──────────────────────────────────────────────────────────────────
+  if (banUntil > 0) {
+    return (
+      <div className="mx-auto max-w-md">
+        <div className="dc-card mt-10 p-7 text-center">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-red-500/15 text-red-300">
+            <Ban size={28} />
+          </div>
+          <h1 className="mt-4 font-display text-2xl font-semibold text-white">Locked out</h1>
+          <p className="mt-2 text-sm text-mute">
+            You&apos;re banned from AI Blitz for copying or screenshotting a question. Access returns on
+          </p>
+          <p className="mt-1 font-semibold text-white">{new Date(banUntil).toUTCString()}</p>
+          <p className="mt-2 text-xs text-mute">
+            This affects AI Blitz only — your account and the other games are unaffected.
+          </p>
+          <button className="btn-ember mt-6 w-full" onClick={() => router.push("/arcade")}>
+            Back to Arcade
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   if (!quiz && !showIntro) {
     return (
       <div className="flex h-72 items-center justify-center text-mute">
@@ -239,6 +340,7 @@ function Blitz() {
             "5 questions, 30 seconds each — pick an answer and it locks in, with no going back.",
             "If the timer runs out on a question, it counts as unanswered.",
             "Each correct answer forges 1 DC, and it's free to play.",
+            "Copying a question or taking a screenshot locks you out of this game for 3 days — answer from what you know.",
           ]}
           tiers={tiers}
           busy={starting}
@@ -274,33 +376,52 @@ function Blitz() {
             </div>
           </div>
 
-          <div className="dc-card p-5">
-            <p className="whitespace-pre-wrap text-[15px] font-medium leading-relaxed text-white">{q.question}</p>
-            <div className="mt-4 grid gap-2">
-              {q.options.map((o, i) => {
-                const active = chosen[idx] === i;
-                return (
-                  <button
-                    key={i}
-                    onClick={() => pick(i)}
-                    disabled={locked}
-                    className={`flex items-start gap-2.5 rounded-xl border p-3 text-left text-sm transition disabled:cursor-not-allowed ${
-                      active
-                        ? "border-ember-500/60 bg-ember-500/10 text-white shadow-glow-ember"
-                        : "border-edge bg-ink-800/50 text-white/90 hover:border-ember-500/30 disabled:opacity-60"
-                    }`}
-                  >
-                    <span
-                      className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md text-xs font-bold ${
-                        active ? "bg-ember-500 text-white" : "bg-ink-700 text-mute"
-                      }`}
-                    >
-                      {LETTER(i)}
-                    </span>
-                    <span>{o}</span>
-                  </button>
-                );
-              })}
+          <div
+            className="dc-card select-none p-5"
+            onCopy={onCopyAttempt}
+            onCut={onCopyAttempt}
+            onContextMenu={(e) => e.preventDefault()}
+          >
+            <div className="mb-2 flex items-center gap-1.5 text-[11px] uppercase tracking-wider text-mute">
+              <ShieldAlert size={13} className="text-ember-400" /> Copy- &amp; screenshot-protected — no peeking
+            </div>
+            <div className="relative">
+              <div className={`transition duration-150 ${obscured ? "pointer-events-none blur-lg" : ""}`}>
+                <p className="whitespace-pre-wrap text-[15px] font-medium leading-relaxed text-white">{q.question}</p>
+                <div className="mt-4 grid gap-2">
+                  {q.options.map((o, i) => {
+                    const active = chosen[idx] === i;
+                    return (
+                      <button
+                        key={i}
+                        onClick={() => pick(i)}
+                        disabled={locked}
+                        className={`flex items-start gap-2.5 rounded-xl border p-3 text-left text-sm transition disabled:cursor-not-allowed ${
+                          active
+                            ? "border-ember-500/60 bg-ember-500/10 text-white shadow-glow-ember"
+                            : "border-edge bg-ink-800/50 text-white/90 hover:border-ember-500/30 disabled:opacity-60"
+                        }`}
+                      >
+                        <span
+                          className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md text-xs font-bold ${
+                            active ? "bg-ember-500 text-white" : "bg-ink-700 text-mute"
+                          }`}
+                        >
+                          {LETTER(i)}
+                        </span>
+                        <span>{o}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              {obscured && (
+                <div className="absolute inset-0 flex items-center justify-center rounded-xl bg-ink-900/60 text-center backdrop-blur-sm">
+                  <span className="flex items-center gap-2 text-sm text-mute">
+                    <EyeOff size={15} className="text-ember-400" /> Hidden while the window is inactive
+                  </span>
+                </div>
+              )}
             </div>
           </div>
 

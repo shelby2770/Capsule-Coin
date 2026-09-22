@@ -42,6 +42,7 @@ const STATUS: Record<string, number> = {
   ATTEMPTS_DONE: 409,
   WRONG_TEXT: 400,
   TOO_FAST: 400,
+  GAME_BANNED: 403, // copy/screenshot lockout from a single game (not the account)
 };
 
 /** Maps a thrown LedgerError to a clean JSON response; anything else -> 500. */

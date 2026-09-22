@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireMember } from "@/lib/auth/verify";
-import { startWord, guessWord, wordState } from "@/lib/games/word";
+import { startWord, guessWord, wordState, reportWordGuard } from "@/lib/games/word";
 import { ledgerErrorResponse, gateResponse } from "@/lib/http";
 import { rateLimit } from "@/lib/rateLimit";
 import { config } from "@/lib/config";
@@ -17,6 +17,7 @@ const schema = z.discriminatedUnion("action", [
     guess: z.string().min(1).max(12),
   }),
   z.object({ action: z.literal("state"), sessionId: z.string().min(1).max(64) }),
+  z.object({ action: z.literal("guard"), sessionId: z.string().min(1).max(64) }),
 ]);
 
 /**
@@ -24,6 +25,7 @@ const schema = z.discriminatedUnion("action", [
  *   { action:"start", tier }               → begin a game (spends a play)
  *   { action:"guess", sessionId, guess }   → submit a guess, get colour feedback
  *   { action:"state", sessionId }          → reload the current board (resume)
+ *   { action:"guard", sessionId }          → copy/screenshot guard (bans on any attempt)
  */
 export async function POST(req: Request) {
   const gate = await requireMember(req);
@@ -67,6 +69,9 @@ export async function POST(req: Request) {
     }
     if (d.action === "guess") {
       return NextResponse.json(await guessWord(actor, d.sessionId, d.guess));
+    }
+    if (d.action === "guard") {
+      return NextResponse.json(await reportWordGuard(actor, d.sessionId));
     }
     return NextResponse.json(await wordState(actor, d.sessionId));
   } catch (e) {

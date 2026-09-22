@@ -274,7 +274,7 @@ function ProblemGame() {
       });
       const d = await r.json();
       if (!r.ok) {
-        if (d.error === "PROBLEM_BANNED") setBanUntil(Date.now() + 1); // trigger the banned screen
+        if (d.error === "GAME_BANNED") setBanUntil(Date.now() + 1); // trigger the banned screen
         setStartErr(d.message || "Couldn't start the game.");
         return;
       }

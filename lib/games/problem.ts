@@ -6,7 +6,7 @@ import { LedgerError, arcadeGate, spendGamePlay, awardGameDc, refundGamePlay } f
 import { assertValidTier } from "@/lib/games/common";
 import { assertCanStart, assertTierNotUsedToday } from "@/lib/games/word";
 import { consumeProblem, returnProblem, remainingProblemCount, availableProblemTopics } from "@/lib/games/pools";
-import { assertNotProblemBanned, banFromProblem, problemBanUntil } from "@/lib/games/bans";
+import { assertNotGameBanned, banFromGame, gameBanUntil } from "@/lib/games/bans";
 import {
   createSession,
   getSession,
@@ -58,7 +58,7 @@ function assertProblemTierLive(tier: number): void {
 /** Pre-start gate for the page: ban state + availability, without spending anything. */
 export async function problemGate(email: string): Promise<ProblemGate> {
   const [until, problemsRemaining, topics] = await Promise.all([
-    problemBanUntil(email),
+    gameBanUntil(email, "problem"),
     remainingProblemCount(),
     availableProblemTopics(),
   ]);
@@ -98,7 +98,7 @@ export async function startProblem(
 ): Promise<ProblemBoard> {
   assertValidTier(tier);
   assertProblemTierLive(tier);
-  await assertNotProblemBanned(actor.email);
+  await assertNotGameBanned(actor.email, "problem");
   const gate = await arcadeGate(actor.email);
   assertCanStart(gate, tier);
   await assertTierNotUsedToday(actor.email, "problem", tier);
@@ -165,7 +165,7 @@ export async function reportCopy(
   const session = await loadOwned(actor, sessionId);
   const statementLen = Math.max(1, session.problem!.statement.length);
   if (session.status !== "active") {
-    const until = await problemBanUntil(actor.email);
+    const until = await gameBanUntil(actor.email, "problem");
     return { banned: until > 0, banUntilMs: until, copiedRatio: (session.copiedChars ?? 0) / statementLen };
   }
   const added = Math.max(0, Math.floor(Number(chars) || 0));
@@ -175,7 +175,7 @@ export async function reportCopy(
   if (ratio >= config.games.problem.copyBanRatio) {
     session.status = "abandoned";
     await saveSession(session);
-    const banUntilMs = await banFromProblem(actor.email);
+    const banUntilMs = await banFromGame(actor.email, "problem");
     return { banned: true, banUntilMs, copiedRatio: round2(ratio) };
   }
   await saveSession(session);
@@ -196,12 +196,12 @@ export async function reportScreenshot(
 ): Promise<ProblemScreenshotResult> {
   const session = await loadOwned(actor, sessionId);
   if (session.status !== "active") {
-    const until = await problemBanUntil(actor.email);
+    const until = await gameBanUntil(actor.email, "problem");
     return { banned: until > 0, banUntilMs: until };
   }
   session.status = "abandoned";
   await saveSession(session);
-  const banUntilMs = await banFromProblem(actor.email);
+  const banUntilMs = await banFromGame(actor.email, "problem");
   return { banned: true, banUntilMs };
 }
 

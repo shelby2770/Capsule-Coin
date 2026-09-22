@@ -178,6 +178,10 @@ export const config = {
         num(process.env.GAMES_WORD_TTL_T2, 600), // tier 2 — 10 min
         num(process.env.GAMES_WORD_TTL_T3, 1200), // tier 3 — 20 min
       ] as ReadonlyArray<number>,
+      // Days a copy/screenshot-cheat ban locks Guess the Word (this game only, not
+      // the account). There's nothing legitimate to copy on the board, so ANY copy
+      // attempt or a detected PrtScn trips it immediately (no ratio).
+      banDays: num(process.env.GAMES_WORD_BAN_DAYS, 3),
     },
     type: {
       // Reward by net WPM = baseReward at baseWpm, halving each stepWpm below it —
@@ -269,6 +273,10 @@ export const config = {
       secPerQuestion: num(process.env.GAMES_BLITZ_SEC, 30),
       dcPerCorrect: num(process.env.GAMES_BLITZ_DC_PER_CORRECT, 1),
       liveGen: (process.env.GAMES_BLITZ_LIVEGEN || "false").toLowerCase() === "true",
+      // Days a copy/screenshot-cheat ban locks AI Blitz (this game only, not the
+      // account). Copying a question to feed an LLM is the cheat, so ANY copy
+      // attempt or a detected PrtScn trips it immediately (no ratio).
+      banDays: num(process.env.GAMES_BLITZ_BAN_DAYS, 3),
     },
   },
   // Marketplace offers auto-expire (and are deleted) once they're older than this
