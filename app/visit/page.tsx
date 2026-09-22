@@ -16,7 +16,10 @@ import {
   TrendingUp,
   TrendingDown,
   Pickaxe,
-  Gamepad2,
+  Puzzle,
+  Keyboard,
+  Code2,
+  Zap,
   Store,
   Repeat,
   ShieldCheck,
@@ -24,42 +27,201 @@ import {
   LogOut,
 } from "lucide-react";
 
-type Feature = {
+// ── how-it-plays mini illustrations ──────────────────────────────────────────
+// Small, static representations of each activity's core mechanic. Hardcoded
+// sample state (not live) — just enough to show a visitor how the game feels.
+
+function MiningViz() {
+  // Draw tokens against a hidden vault; the matches (collisions) forge DC.
+  const hits = new Set([2, 5, 6]);
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <div className="flex gap-1.5">
+        {Array.from({ length: 8 }).map((_, i) => (
+          <span
+            key={i}
+            aria-hidden
+            className={
+              hits.has(i)
+                ? "h-6 w-6 rounded-full bg-ember-500/30 shadow-[0_0_10px_rgba(255,120,40,0.45)] ring-1 ring-ember-400/60"
+                : "h-6 w-6 rounded-full border border-white/10 bg-white/[0.03]"
+            }
+          />
+        ))}
+      </div>
+      <div className="flex shrink-0 items-center gap-1 font-display text-base font-bold text-gradient-flame">
+        <DarkCoinLogo size={16} /> +3
+      </div>
+    </div>
+  );
+}
+
+type Tile = "c" | "p" | "a"; // correct / present / absent
+const TILE_CLASS: Record<Tile, string> = {
+  c: "bg-teal-500/85 text-white ring-teal-400/40",
+  p: "bg-gold-500/80 text-ink-900 ring-gold-400/40",
+  a: "bg-white/[0.06] text-mute ring-white/10",
+};
+
+function WordViz() {
+  // Wordle-style clues: a first guess (mixed) resolving to the answer FORGE.
+  const rows: Array<Array<[string, Tile]>> = [
+    [["F", "c"], ["R", "p"], ["A", "a"], ["M", "a"], ["E", "c"]],
+    [["F", "c"], ["O", "c"], ["R", "c"], ["G", "c"], ["E", "c"]],
+  ];
+  return (
+    <div className="flex flex-col items-center gap-1.5">
+      {rows.map((row, r) => (
+        <div key={r} className="flex gap-1.5">
+          {row.map(([ch, s], i) => (
+            <span
+              key={i}
+              className={`flex h-7 w-7 items-center justify-center rounded-md text-xs font-bold ring-1 ${TILE_CLASS[s]}`}
+            >
+              {ch}
+            </span>
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function TypeViz() {
+  return (
+    <div className="space-y-2">
+      <div className="rounded-lg bg-black/30 px-3 py-2 font-mono text-[13px] leading-relaxed">
+        <span className="rounded bg-teal-500/15 text-teal-200">The quick brown </span>
+        <span className="mx-px inline-block h-4 w-0.5 animate-pulse rounded bg-ember-400 align-text-bottom" />
+        <span className="text-mute/50">fox jumps over…</span>
+      </div>
+      <div className="flex items-center gap-2 text-[11px]">
+        <span className="chip border-ember-500/30 text-ember-300 tabular-nums">82 WPM</span>
+        <span className="text-mute">faster &amp; cleaner = more DC</span>
+      </div>
+    </div>
+  );
+}
+
+function ProblemViz() {
+  const rubric = [
+    { label: "Approach", v: 4, max: 4 },
+    { label: "Correctness", v: 2, max: 3 },
+    { label: "Efficiency", v: 1, max: 2 },
+    { label: "Edge cases", v: 0, max: 1 },
+  ];
+  return (
+    <div className="space-y-2.5">
+      <div className="rounded-lg bg-black/40 px-3 py-2 font-mono text-[11px] leading-relaxed">
+        <div>
+          <span className="text-ember-300">for</span> <span className="text-white/80">x</span>{" "}
+          <span className="text-ember-300">in</span> <span className="text-white/80">nums:</span>
+        </div>
+        <div className="pl-3 text-white/80">
+          <span className="text-teal-300">seen</span>.add(x)
+        </div>
+      </div>
+      <div className="space-y-1">
+        {rubric.map((r) => (
+          <div key={r.label} className="flex items-center gap-2">
+            <span className="w-20 shrink-0 text-[10px] text-mute">{r.label}</span>
+            <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/10">
+              <div
+                className="h-full rounded-full bg-ember-500"
+                style={{ width: `${(r.v / r.max) * 100}%` }}
+              />
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="text-right font-display text-sm font-bold text-white">
+        7<span className="text-mute">/10</span>
+      </div>
+    </div>
+  );
+}
+
+function BlitzViz() {
+  const opts: Array<{ k: string; t: string; ok?: boolean }> = [
+    { k: "A", t: "Sigmoid", ok: true },
+    { k: "B", t: "Linear" },
+    { k: "C", t: "Identity" },
+    { k: "D", t: "Constant" },
+  ];
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between gap-2 text-[11px]">
+        <span className="text-white/80">Which is non-linear?</span>
+        <span className="chip border-ember-500/30 text-ember-300 tabular-nums">0:23</span>
+      </div>
+      <div className="grid grid-cols-2 gap-1.5">
+        {opts.map((o) => (
+          <span
+            key={o.k}
+            className={`flex items-center gap-1.5 rounded-lg px-2 py-1 text-[11px] ring-1 ${
+              o.ok
+                ? "bg-teal-500/20 text-teal-200 ring-teal-400/40"
+                : "bg-white/5 text-mute ring-white/10"
+            }`}
+          >
+            <span className="font-bold">{o.k}</span> {o.t}
+          </span>
+        ))}
+      </div>
+      <div className="flex items-center gap-1">
+        {[0, 1, 2, 3, 4].map((i) => (
+          <span
+            key={i}
+            className={`h-1 flex-1 rounded-full ${i < 2 ? "bg-ember-500" : "bg-white/10"}`}
+          />
+        ))}
+        <span className="ml-1 shrink-0 text-[10px] text-mute">Q3/5</span>
+      </div>
+    </div>
+  );
+}
+
+type Game = {
+  icon: React.ComponentType<{ size?: number; className?: string }>;
+  title: string;
+  caption: string;
+  Viz: React.ComponentType;
+};
+
+const GAMES: Game[] = [
+  { icon: Pickaxe, title: "Mining Rig", caption: "Draw against the hidden vault — every match forges DC.", Viz: MiningViz },
+  { icon: Puzzle, title: "Guess the Word", caption: "Crack the hidden word from green / gold / grey clues.", Viz: WordViz },
+  { icon: Keyboard, title: "Type Racing", caption: "Type a passage fast and clean — your WPM sets the payout.", Viz: TypeViz },
+  { icon: Code2, title: "Problem Solving", caption: "Sketch a solution; an AI judge scores it out of 10 for DC.", Viz: ProblemViz },
+  { icon: Zap, title: "AI Blitz", caption: "Rapid-fire AI / ML multiple choice — beat the clock.", Viz: BlitzViz },
+];
+
+type Concept = {
   icon: React.ComponentType<{ size?: number; className?: string }>;
   title: string;
   body: string;
 };
 
-const FEATURES: Feature[] = [
+const ECONOMY: Concept[] = [
   {
     icon: Coins,
-    title: "Two coins, one economy",
-    body: "Capsule Coin (CC) is the spendable currency — its value floats on how spread-out everyone's holdings are. Dark Capsule Coin (DC) is the rarer coin you forge by playing, then convert back to CC.",
-  },
-  {
-    icon: Pickaxe,
-    title: "Mining forges DC",
-    body: "Draw tokens against a secret vault each day — every collision mints DC from a fixed reserve. A few free draws a day, or burn CC to mine harder tiers for bigger rewards.",
-  },
-  {
-    icon: Gamepad2,
-    title: "The Arcade",
-    body: "Four games — Guess the Word, Type Racing, Problem Solving, and AI Blitz — each pay out DC when you win. One free play a day across the games, with paid tiers for higher stakes.",
-  },
-  {
-    icon: Store,
-    title: "The Market",
-    body: "Send and trade CC with other members, haggle over deals, and settle transfers. Every move is written to a tamper-evident ledger everyone can audit.",
+    title: "Two coins",
+    body: "CC is the spendable currency — its value floats on how spread-out everyone's holdings are. DC is the rarer coin you forge by playing.",
   },
   {
     icon: Repeat,
     title: "Convert DC → CC",
-    body: "Turn the DC you've forged back into spendable CC. Converting destroys DC and reopens reserve headroom, so mining and games can keep paying out.",
+    body: "Turn the DC you've forged back into spendable CC. Converting destroys DC and reopens reserve headroom for more play.",
+  },
+  {
+    icon: Store,
+    title: "The Market",
+    body: "Send and trade CC with other members, haggle over deals, and settle transfers — every move on a tamper-evident ledger.",
   },
   {
     icon: Vault,
-    title: "A capped supply",
-    body: "Mining and games mint DC from the same fixed reserve, so DC can't inflate away. The economy stays bounded no matter how hard everyone plays.",
+    title: "Capped supply",
+    body: "Mining and games mint DC from one fixed reserve, so DC can't inflate away no matter how hard everyone plays.",
   },
 ];
 
@@ -202,21 +364,53 @@ export default function VisitPage() {
         </div>
       </section>
 
-      {/* how it works */}
+      {/* ways to forge DC — each with a mini illustration of how it plays */}
       <section className="mt-10">
         <h2 className="text-center font-display text-xl font-semibold text-white">
-          How it works
+          Ways to forge DC
+        </h2>
+        <p className="mx-auto mt-1 max-w-md text-center text-sm text-mute">
+          Five ways to earn — here&apos;s how each one plays.
+        </p>
+        <div className="mt-5 grid gap-4 sm:grid-cols-2">
+          {GAMES.map((g) => {
+            const Icon = g.icon;
+            const Viz = g.Viz;
+            return (
+              <div key={g.title} className="dc-card flex flex-col p-5">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-ember-500/15 text-ember-400">
+                    <Icon size={20} />
+                  </div>
+                  <div className="min-w-0">
+                    <h3 className="font-display text-base font-semibold text-white">{g.title}</h3>
+                    <p className="text-[12px] leading-snug text-mute">{g.caption}</p>
+                  </div>
+                </div>
+                <div className="mt-4 flex flex-1 flex-col justify-center rounded-xl border border-white/10 bg-black/20 p-3">
+                  <Viz />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </section>
+
+      {/* the economy around the games */}
+      <section className="mt-10">
+        <h2 className="text-center font-display text-xl font-semibold text-white">
+          The economy around it
         </h2>
         <div className="mt-5 grid gap-4 sm:grid-cols-2">
-          {FEATURES.map((f) => {
-            const Icon = f.icon;
+          {ECONOMY.map((c) => {
+            const Icon = c.icon;
             return (
-              <div key={f.title} className="dc-card p-5">
+              <div key={c.title} className="dc-card p-5">
                 <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-ember-500/15 text-ember-400">
                   <Icon size={22} />
                 </div>
-                <h3 className="mt-3 font-display text-lg font-semibold text-white">{f.title}</h3>
-                <p className="mt-1 text-sm leading-relaxed text-mute">{f.body}</p>
+                <h3 className="mt-3 font-display text-lg font-semibold text-white">{c.title}</h3>
+                <p className="mt-1 text-sm leading-relaxed text-mute">{c.body}</p>
               </div>
             );
           })}
@@ -230,8 +424,9 @@ export default function VisitPage() {
         </div>
         <h2 className="mt-4 font-display text-xl font-semibold text-white">Want your own wallet?</h2>
         <p className="mx-auto mt-2 max-w-md text-sm text-mute">
-          Only the {ov ? ov.members : 16} Capsule members can mine, play, trade, and hold coins. Ask
-          Adnan to add you to the allowlist — then sign back in and your wallet is waiting.
+          Only the {ov ? ov.members : 16} Capsule members can mine, play, trade, and hold coins.
+          Membership is invite-only — once you&apos;re added, sign back in and your wallet is
+          waiting.
         </p>
         <button onClick={() => void signOut()} className="btn-ghost mt-5">
           <LogOut size={16} /> Sign out / switch account
