@@ -1,8 +1,7 @@
 "use client";
 
-import Link from "next/link";
 import { useAuth } from "@/components/AuthProvider";
-import { AlertTriangle, Ban, Repeat } from "lucide-react";
+import { AlertTriangle, Ban } from "lucide-react";
 
 /**
  * Credit-floor standing banner. Shows an ember warning while a member is in the
@@ -41,23 +40,18 @@ export function StandingBanner() {
     const hrs = hrsLeft % 24;
     const left = days > 0 ? `${days}d ${hrs}h` : `${hrs}h`;
     return (
-      <div className="dc-card mb-4 flex flex-col gap-3 border-ember-500/40 p-4 text-sm sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-start gap-3">
-          <AlertTriangle size={18} className="mt-0.5 shrink-0 text-ember-400" />
-          <div>
-            <div className="font-semibold text-ember-300">
-              Below the −500 CC floor — {left} to recover
-            </div>
-            <p className="mt-1 text-mute">
-              Buying and mining are locked until you climb back above −500. Get
-              paid by selling, or convert DC → CC. Miss the deadline and the
-              account is permanently frozen.
-            </p>
+      <div className="dc-card mb-4 flex items-start gap-3 border-ember-500/40 p-4 text-sm">
+        <AlertTriangle size={18} className="mt-0.5 shrink-0 text-ember-400" />
+        <div>
+          <div className="font-semibold text-ember-300">
+            Below the −500 CC floor — {left} to recover
           </div>
+          <p className="mt-1 text-mute">
+            Buying and mining are locked until you climb back above −500. Earn CC
+            back by selling or getting paid. Miss the deadline and the account is
+            permanently frozen.
+          </p>
         </div>
-        <Link href="/convert" className="btn-ember shrink-0 self-start sm:self-center">
-          <Repeat size={16} /> Convert DC → CC
-        </Link>
       </div>
     );
   }

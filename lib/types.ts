@@ -17,6 +17,7 @@ export type MemberPublic = {
   banned: boolean; // permanent lockout (missed the grace deadline)
   onboardedAt: string | null; // when they finished the DC intro; null = show story
   arcadeOnboardedAt: string | null; // when they finished the Arcade intro; null = show story
+  dcSplitSeenAt: string | null; // when they made the one-time DC/CC split choice; null = show migration story
 };
 
 export type MeResponse =
@@ -158,9 +159,8 @@ export type TransactionPublic = {
 export type MiningTier = { index: number; fee: number; mines: number };
 
 export type MiningStatus = {
-  freeRemaining: number; // free mines left today (0 once today's free play went to a game)
+  freeRemaining: number; // mining's own free mines left today
   freePerDay: number;
-  freeTrack: "none" | "mining" | "games"; // which track today's single free allowance is locked to
   paidRemaining: number;
   tier: number; // how many pay-to-mine packs unlocked today (0..ladder.length)
   nextTier: MiningTier | null; // next purchasable pack, or null when maxed out
@@ -190,11 +190,12 @@ export type MineOutcome = {
 };
 
 export type BuyPackOutcome = {
-  balance: number;
+  balance: number; // CC wallet (unchanged — packs cost DC now)
+  dcBalance: number; // DC wallet after paying for the pack
   tier: number;
   paidRemaining: number;
   nextTier: MiningTier | null;
-  fee: number;
+  fee: number; // DC spent
   mines: number;
 };
 
@@ -261,17 +262,16 @@ export type GameKind = "word" | "type" | "problem" | "blitz";
 
 /** Hub status: shared free-play budget, the reserve, and per-game affordances. */
 export type ArcadeStatus = {
-  freeRemaining: number; // free game plays left today (0 once today's free play went to mining)
+  freeRemaining: number; // free game plays left today
   freePlaysPerDay: number;
-  freeTrack: "none" | "mining" | "games"; // which track today's single free allowance is locked to
-  mineFreeRemaining: number; // free mines left today (0 once today's free play went to a game)
+  mineFreeRemaining: number; // mining's own free mines left today
   reserveRemaining: number; // shared DC mining reserve headroom
   supplyCap: number;
   balance: number; // CC wallet (for affording paid tiers)
   dcBalance: number;
   standing: "OK" | "GRACE" | "BANNED";
   resetsAtMs: number; // next daily refill (UTC midnight)
-  tierFees: number[]; // CC fee for tiers 1..3
+  tierFees: number[]; // DC fee for tiers 1..3
   wordsRemaining: number; // words left in the pool
   paragraphsRemaining: number; // typing passages available (reused, not consumed)
   problemsRemaining: number; // problem-solving problems available (reused)

@@ -52,6 +52,9 @@ export type Member = {
   onboardedAt: string | null;
   // Arcade intro story: ISO time the member finished the Arcade intro (null = pending).
   arcadeOnboardedAt: string | null;
+  // One-time DC/CC split migration: ISO time the member made their convert-or-keep
+  // choice (null = show the migration story). New members are born-stamped.
+  dcSplitSeenAt: string | null;
 };
 
 export type OfferType = "SELL" | "BUY";
@@ -187,9 +190,6 @@ export type LedgerState = {
   // Open/closed price negotiations on SELL offers (not hash-chained; the settled
   // trade is the hash-chained TRADE transaction).
   negotiations: Negotiation[];
-  // Capsule Fruit Fund — running total (BDT) from DC bought with real money.
-  // Maintained by the Fruit Minister (config.dc.fruitMinisterEmail).
-  fruitFundBdt: number;
 };
 
 export class LedgerError extends Error {
@@ -215,7 +215,7 @@ const ledgerRef = adminDb
   .doc(process.env.LEDGER_DOC_ID?.trim() || "state");
 
 function emptyState(): LedgerState {
-  return { members: [], offers: [], transactions: [], transfers: [], negotiations: [], fruitFundBdt: 0 };
+  return { members: [], offers: [], transactions: [], transfers: [], negotiations: [] };
 }
 
 /**
@@ -235,6 +235,7 @@ function normalizeState(s: LedgerState): LedgerState {
     if (typeof m.banned !== "boolean") m.banned = false;
     if (m.onboardedAt === undefined) m.onboardedAt = null;
     if (m.arcadeOnboardedAt === undefined) m.arcadeOnboardedAt = null;
+    if (m.dcSplitSeenAt === undefined) m.dcSplitSeenAt = null;
     if (typeof m.freeGamesUsed !== "number" || !Number.isFinite(m.freeGamesUsed)) {
       m.freeGamesUsed = 0;
     }
@@ -248,10 +249,6 @@ function normalizeState(s: LedgerState): LedgerState {
     transactions,
     transfers: Array.isArray(s.transfers) ? s.transfers : [],
     negotiations: Array.isArray(s.negotiations) ? s.negotiations : [],
-    fruitFundBdt:
-      typeof s.fruitFundBdt === "number" && Number.isFinite(s.fruitFundBdt)
-        ? s.fruitFundBdt
-        : 0,
   };
 }
 
@@ -310,6 +307,7 @@ const MEMBER_HEADERS = [
   "Onboarded At (UTC)",
   "Arcade Onboarded At (UTC)",
   "Free Games Used",
+  "DC Split Seen At (UTC)",
 ];
 const OFFER_HEADERS = [
   "ID",
@@ -384,6 +382,7 @@ function parseMembers(wb: ExcelJS.Workbook): Member[] {
       onboardedAt: toStrOrNull(rawCell(row, 15)),
       arcadeOnboardedAt: toStrOrNull(rawCell(row, 16)),
       freeGamesUsed: toNum(rawCell(row, 17)),
+      dcSplitSeenAt: toStrOrNull(rawCell(row, 18)),
     });
   });
   return out;
@@ -584,7 +583,7 @@ async function buildWorkbook(next: LedgerState): Promise<ExcelJS.Workbook> {
   // Members
   const ms = wb.addWorksheet("Members", { views: [{ state: "frozen", ySplit: 1 }] });
   ms.addRow(MEMBER_HEADERS);
-  [34, 26, 16, 12, 10, 26, 26, 14, 16, 10, 18, 14, 26, 10, 26, 26, 16].forEach(
+  [34, 26, 16, 12, 10, 26, 26, 14, 16, 10, 18, 14, 26, 10, 26, 26, 16, 26].forEach(
     (w, i) => (ms.getColumn(i + 1).width = w),
   );
   for (const m of next.members) {
@@ -606,6 +605,7 @@ async function buildWorkbook(next: LedgerState): Promise<ExcelJS.Workbook> {
       m.onboardedAt ?? "",
       m.arcadeOnboardedAt ?? "",
       m.freeGamesUsed ?? 0,
+      m.dcSplitSeenAt ?? "",
     ]);
   }
   styleHeader(ms);
@@ -783,6 +783,8 @@ function ensureMemberDraft(
       banned: false,
       onboardedAt: null,
       arcadeOnboardedAt: null,
+      // Born after the split → never see the one-time DC→CC migration story.
+      dcSplitSeenAt: new Date().toISOString(),
     };
     draft.members.push(m);
   }
@@ -1009,6 +1011,82 @@ export async function markArcadeOnboarded(email: string): Promise<{ arcadeOnboar
     const m = ensureMemberDraft(draft, lower, allowlistEntry(lower)?.name || lower);
     if (!m.arcadeOnboardedAt) m.arcadeOnboardedAt = new Date().toISOString();
     return { arcadeOnboardedAt: m.arcadeOnboardedAt };
+  });
+}
+
+export type DcSplitChoiceResult = {
+  dcSplitSeenAt: string;
+  converted: number; // DC converted to CC (0 if kept or nothing to convert)
+  ccReceived: number; // CC received from the conversion
+  dcBalance: number;
+  ccBalance: number;
+};
+
+/**
+ * Record a member's one-time DC/CC split choice (idempotent — set once). On
+ * "convert" their ENTIRE DC balance is converted to CC at the current rate — the
+ * final, only remaining DC→CC conversion; on "keep" the DC stays for the Arcade.
+ * Either way dcSplitSeenAt is stamped so the migration story never shows again.
+ */
+export async function markDcSplitChoice(
+  email: string,
+  choice: "convert" | "keep",
+): Promise<DcSplitChoiceResult> {
+  const lower = email.trim().toLowerCase();
+  return mutate((draft) => {
+    const m = ensureMemberDraft(draft, lower, allowlistEntry(lower)?.name || lower);
+    // Already chosen (or born after the split) — never convert twice.
+    if (m.dcSplitSeenAt) {
+      return {
+        dcSplitSeenAt: m.dcSplitSeenAt,
+        converted: 0,
+        ccReceived: 0,
+        dcBalance: round2(m.dcBalance),
+        ccBalance: round2(m.balance),
+      };
+    }
+    let converted = 0;
+    let ccReceived = 0;
+    if (choice === "convert" && !m.banned) {
+      const x = round2(m.dcBalance);
+      if (x >= config.dc.minConvert) {
+        const supply = totalDcSupply(draft);
+        const { cc, perDc, multiplier } = quoteDcToCc(x, supply);
+        if (cc > 0) {
+          m.dcBalance = round2(m.dcBalance - x);
+          m.balance = round2(m.balance + cc);
+          refreshGrace(m, Date.now()); // the CC can lift them out of grace
+          converted = x;
+          ccReceived = cc;
+          appendTransaction(draft, {
+            type: "CONVERT",
+            currency: "DC",
+            fromEmail: m.email,
+            toEmail: null,
+            amountCC: x,
+            offerId: null,
+            memo: `Split migration: converted ${x} DC → ${cc} CC (${perDc}/DC · supply ×${multiplier})`,
+          });
+          appendTransaction(draft, {
+            type: "CONVERT",
+            currency: "CC",
+            fromEmail: null,
+            toEmail: m.email,
+            amountCC: cc,
+            offerId: null,
+            memo: `+${cc} CC from the one-time DC split migration`,
+          });
+        }
+      }
+    }
+    m.dcSplitSeenAt = new Date().toISOString();
+    return {
+      dcSplitSeenAt: m.dcSplitSeenAt,
+      converted,
+      ccReceived,
+      dcBalance: round2(m.dcBalance),
+      ccBalance: round2(m.balance),
+    };
   });
 }
 
@@ -1800,120 +1878,6 @@ export async function recordDesertHouseTrade(input: {
   });
 }
 
-export type DesertHousePurchaseResult = {
-  recorded: boolean; // false when it was a duplicate (no-op)
-  duplicate: boolean;
-  txId: string | null;
-  buyer: { email: string; name: string; dcBalance: number };
-  dcCredited: number;
-  bdtPaid: number;
-  fruitFundBdt: number;
-  message: string; // human line the flow can echo back into the space
-};
-
-/**
- * Record a real-money DC purchase reported in the DesertHouse chat ("Riaz paid
- * 500 taka to fruit fund for Eid"). Money is settled offline; this credits the
- * buyer's DC (computed from the taka via the stable buy curve, `dcForBdt`) and
- * tallies the taka into the Capsule Fruit Fund — the same effect as the Minister
- * recording it on the /fund page.
- *
- * Safety: ONLY the Fruit Minister may report these — real money moves, so only
- * the fund's keeper can attest it (authorEmail must equal the trusted Chat
- * sender, checked here against config.dc.fruitMinisterEmail; Gemini also gates
- * it, but this is the authoritative check). Idempotent on externalId.
- */
-export async function recordDesertHousePurchase(input: {
-  authorEmail: string; // Chat message author — MUST be the Fruit Minister
-  buyerEmail: string; // who receives the DC
-  bdtPaid: number; // taka paid into the fund
-  reason?: string; // free-text purpose ("Eid")
-  externalId?: string; // Chat message id, for idempotency
-  rawText?: string; // original message text (audit only)
-}): Promise<DesertHousePurchaseResult> {
-  const authorEmail = cleanEmail(input.authorEmail);
-  const buyerEmail = cleanEmail(input.buyerEmail);
-  const bdtPaid = round2(Number(input.bdtPaid));
-  const reason = (input.reason || "").trim();
-  const externalId = (input.externalId || "").trim();
-
-  return mutate((draft): DesertHousePurchaseResult => {
-    // Author gate: only the Fruit Minister can attest a real-money top-up.
-    if (!isFruitMinister(authorEmail)) {
-      throw new LedgerError(
-        "NOT_PARTICIPANT",
-        "Only the Fruit Minister can record a taka → DC purchase.",
-      );
-    }
-    if (!isAllowed(buyerEmail)) {
-      throw new LedgerError("NOT_MEMBER", "That buyer isn't a Capsule member.");
-    }
-    if (!Number.isFinite(bdtPaid) || bdtPaid <= 0) {
-      throw new LedgerError("INVALID", "Say how much taka was paid.");
-    }
-    if (bdtPaid > config.desertHouse.maxBdt) {
-      throw new LedgerError(
-        "INVALID",
-        `That taka amount looks too large (max ৳${config.desertHouse.maxBdt}) — record big purchases on the /fund page.`,
-      );
-    }
-    const dcCredited = dcForBdt(bdtPaid);
-    if (dcCredited <= 0) {
-      throw new LedgerError("INVALID", "That taka amount converts to 0 DC.");
-    }
-
-    const buyer = ensureMemberDraft(
-      draft,
-      buyerEmail,
-      allowlistEntry(buyerEmail)?.name || buyerEmail,
-    );
-
-    // Idempotency: a re-fired flow / re-delivered message is a no-op.
-    if (externalId) {
-      const prior = draft.transactions.find((t) => t.externalId === externalId);
-      if (prior) {
-        return {
-          recorded: false,
-          duplicate: true,
-          txId: prior.id,
-          buyer: { email: buyer.email, name: buyer.name, dcBalance: buyer.dcBalance },
-          dcCredited: prior.amountCC,
-          bdtPaid,
-          fruitFundBdt: round2(draft.fruitFundBdt ?? 0),
-          message: "Already recorded — no change.",
-        };
-      }
-    }
-
-    assertNotBanned(buyer); // a banned member can't receive DC either
-
-    buyer.dcBalance = round2(buyer.dcBalance + dcCredited);
-    draft.fruitFundBdt = round2((draft.fruitFundBdt ?? 0) + bdtPaid);
-
-    const tx = appendTransaction(draft, {
-      type: "PURCHASE",
-      currency: "DC",
-      fromEmail: null,
-      toEmail: buyer.email,
-      amountCC: dcCredited,
-      offerId: null,
-      memo: `Bought ${dcCredited} DC for ৳${bdtPaid} → Fruit Fund${reason ? ` — ${reason}` : ""} · ${DESERT_HOUSE_MEMO_TAG}`,
-      externalId: externalId || null,
-    });
-
-    return {
-      recorded: true,
-      duplicate: false,
-      txId: tx.id,
-      buyer: { email: buyer.email, name: buyer.name, dcBalance: buyer.dcBalance },
-      dcCredited,
-      bdtPaid,
-      fruitFundBdt: draft.fruitFundBdt,
-      message: `✅ Recorded (DC purchase): ${buyer.name} +${dcCredited} DC for ৳${bdtPaid}${reason ? ` (${reason})` : ""}. Fruit Fund is now ৳${draft.fruitFundBdt}.`,
-    };
-  });
-}
-
 // ── Mining v2 — collision-lottery (Phase 5 rebuild) ─────────────────────────
 function dayKey(nowMs: number): string {
   return new Date(nowMs).toISOString().slice(0, 10); // UTC yyyy-mm-dd
@@ -1943,19 +1907,24 @@ function applyDailyReset(m: Member, nowMs: number): void {
  * total mined − burned can never exceed supplyCap. This bounds inflation.
  */
 function reserveRemaining(s: LedgerState): number {
-  // Mining now mints DC. The fixed supplyCap bounds net mined DC in circulation;
-  // converting DC->CC destroys DC and reopens that headroom (the DC-native analog
-  // of the old fee-recycling), so an active economy keeps mining alive. Paid-mining
-  // CC BURNs no longer refill the reserve — they're a different currency now.
-  let minedDc = 0;
-  let convertedDc = 0;
+  // Mining + arcade wins MINT DC into circulation against a fixed supplyCap. DC
+  // leaves circulation — reopening headroom — when it's SPENT: on game tiers and
+  // mining packs (BURN/DC), on the one-time DC→CC migration (CONVERT), or clawed
+  // back by an admin (ADJUST debit). Spending recycles the reserve, so an active
+  // economy keeps mining/games alive; net DC in circulation can never exceed the
+  // cap. Real-money PURCHASE DC is intentionally excluded (bonus headroom).
+  let into = 0; // DC minted into circulation
+  let outOf = 0; // DC removed from circulation
   for (const tx of s.transactions) {
     if (tx.currency !== "DC") continue;
-    // Mining AND arcade-game wins both mint against the same fixed reserve.
-    if (tx.type === "MINE" || tx.type === "GAME") minedDc += tx.amountCC;
-    else if (tx.type === "CONVERT") convertedDc += tx.amountCC;
+    if (tx.type === "MINE" || tx.type === "GAME") into += tx.amountCC;
+    else if (tx.type === "CONVERT" || tx.type === "BURN") outOf += tx.amountCC;
+    else if (tx.type === "ADJUST") {
+      if (tx.toEmail) into += tx.amountCC; // DC credited (game refund / admin grant)
+      else if (tx.fromEmail) outOf += tx.amountCC; // DC clawed back
+    }
   }
-  const used = Math.max(0, minedDc - convertedDc);
+  const used = Math.max(0, into - outOf);
   return round2(config.mining.supplyCap - used);
 }
 
@@ -2042,27 +2011,17 @@ function nextTierFor(m: Member): MiningTier | null {
 }
 
 /**
- * The daily FREE allowance is a SINGLE choice split across two mutually-exclusive
- * tracks: spend it on mining (up to config.mining.freePerDay free mines) OR on the
- * arcade games (config.games.freePlaysPerDay free plays) — never both. The first
- * free action of the day locks in the track: once a member takes a free mine
- * (freeMinesUsed > 0) their free game play is gone, and once they play a free game
- * (freeGamesUsed > 0) their free mines are gone. Paid mining packs and paid game
- * tiers are unaffected. Both counters reset each UTC day (applyDailyReset).
+ * The daily FREE allowance is two INDEPENDENT budgets that both refill each UTC
+ * day (applyDailyReset): up to config.mining.freePerDay free mines AND
+ * config.games.freePlaysPerDay free game plays. Taking one never affects the
+ * other — a member can mine free and play a free game the same day. Paid mining
+ * packs and paid game tiers are separate on top.
  */
 function freeMinesRemaining(m: Member): number {
-  if (m.freeGamesUsed > 0) return 0; // committed to the games track today
   return Math.max(0, config.mining.freePerDay - m.freeMinesUsed);
 }
 function freeGamesRemaining(m: Member): number {
-  if (m.freeMinesUsed > 0) return 0; // committed to the mining track today
   return Math.max(0, config.games.freePlaysPerDay - m.freeGamesUsed);
-}
-/** Which track today's single free allowance is locked to (for the UI copy). */
-function freeTrackOf(m: Member): "none" | "mining" | "games" {
-  if (m.freeMinesUsed > 0) return "mining";
-  if (m.freeGamesUsed > 0) return "games";
-  return "none";
 }
 
 export async function mineStatus(email: string): Promise<MiningStatus> {
@@ -2092,18 +2051,18 @@ export async function mineStatus(email: string): Promise<MiningStatus> {
         banned: false,
         onboardedAt: null,
         arcadeOnboardedAt: null,
+        dcSplitSeenAt: null,
       };
   applyDailyReset(m, now);
 
   const reserve = reserveRemaining(s);
-  const freeRemaining = freeMinesRemaining(m); // 0 if today's free play went to a game
+  const freeRemaining = freeMinesRemaining(m); // mining's own free mines left today
   const hasAttempt = freeRemaining > 0 || m.paidRemaining > 0;
   const standing = effectiveStanding(m, now);
 
   return {
     freeRemaining,
     freePerDay: config.mining.freePerDay,
-    freeTrack: freeTrackOf(m),
     paidRemaining: m.paidRemaining,
     tier: m.paidTier,
     nextTier: nextTierFor(m),
@@ -2131,16 +2090,13 @@ export async function mine(actor: {
     applyDailyReset(me, now);
     assertActive(me, now); // no mining while banned / in credit-floor grace
 
-    // Free mining is available only while today's single free allowance hasn't
-    // been spent on a game (freeMinesRemaining returns 0 once freeGamesUsed > 0).
+    // Free mining uses mining's own daily budget (independent of the free game play).
     const freeLeft = freeMinesRemaining(me);
     const paid = freeLeft <= 0;
     if (paid && me.paidRemaining <= 0) {
       throw new LedgerError(
         "NO_ATTEMPTS",
-        me.freeGamesUsed > 0
-          ? "You spent today's free play on a game — unlock a pay-to-mine pack below to mine."
-          : "No mining attempts left today — unlock a pay-to-mine pack below.",
+        "No mining attempts left today — spend DC on a pay-to-mine pack below.",
       );
     }
 
@@ -2148,7 +2104,7 @@ export async function mine(actor: {
     if (reserve <= 0) {
       throw new LedgerError(
         "RESERVE_EMPTY",
-        "The mining reserve is tapped out right now — burned fees will reopen it.",
+        "The mining reserve is tapped out right now — spending DC on games and packs reopens it.",
       );
     }
 
@@ -2199,7 +2155,7 @@ export async function mine(actor: {
   });
 }
 
-/** Buy the next pay-to-mine pack (in ladder order). The fee is burned. */
+/** Buy the next pay-to-mine pack (in ladder order). The fee is paid in DC and burned (reopening the reserve). */
 export async function buyMiningPack(actor: {
   email: string;
   name: string;
@@ -2210,9 +2166,7 @@ export async function buyMiningPack(actor: {
     applyDailyReset(me, now);
     assertActive(me, now); // no pack purchases while banned / in credit-floor grace
 
-    // Only block a pack purchase while free mines are actually AVAILABLE — if
-    // today's free play went to a game, mining free is locked (freeMinesRemaining
-    // === 0) and buying a pack is the only way to mine, so don't block it.
+    // Use up the free mines before paying to unlock a pack.
     if (freeMinesRemaining(me) > 0) {
       throw new LedgerError("FREE_LEFT", "Use your free mines first.");
     }
@@ -2229,28 +2183,30 @@ export async function buyMiningPack(actor: {
         "You've unlocked every mining pack for today.",
       );
     }
-    if (me.balance - tier.fee < config.balanceFloor) {
+    if (round2(me.dcBalance) < tier.fee) {
       throw new LedgerError(
-        "INSUFFICIENT_FUNDS",
-        `Not enough CC — paying ${tier.fee} CC would drop you below the ${config.balanceFloor} CC floor.`,
+        "INSUFFICIENT_DC",
+        `Not enough DC — this pack costs ${tier.fee} DC and you have ${round2(me.dcBalance)}.`,
       );
     }
 
-    me.balance = round2(me.balance - tier.fee);
+    me.dcBalance = round2(me.dcBalance - tier.fee);
     me.paidTier += 1;
     me.paidRemaining = tier.mines;
 
     appendTransaction(draft, {
       type: "BURN",
+      currency: "DC",
       fromEmail: me.email,
       toEmail: null,
       amountCC: tier.fee,
       offerId: null,
-      memo: `Burned ${tier.fee} CC to unlock ${tier.mines} mining attempts`,
+      memo: `Spent ${tier.fee} DC to unlock ${tier.mines} mining attempts`,
     });
 
     return {
       balance: me.balance,
+      dcBalance: me.dcBalance,
       tier: me.paidTier,
       paidRemaining: me.paidRemaining,
       nextTier: nextTierFor(me),
@@ -2260,26 +2216,30 @@ export async function buyMiningPack(actor: {
   });
 }
 
-// ── Arcade games — shared free-play budget, paid entry, DC award ─────────────
+// ── Arcade games — free play + DC-paid entry, DC award ───────────────────────
 // The word/type games keep their own state in separate Firestore collections
 // (lib/games/*). Only the two ledger-touching legs live here: spending a play
-// (free counter or a CC burn) and minting the DC prize (reserve-capped).
+// (free counter or a DC burn) and minting the DC prize (reserve-capped).
 
 export type ArcadeGate = {
-  freeRemaining: number; // free game plays left today (0 once today's free play went to mining)
+  freeRemaining: number; // free game plays left today
   freePlaysPerDay: number;
-  freeTrack: "none" | "mining" | "games"; // which track today's single free allowance is locked to
-  mineFreeRemaining: number; // free MINES left today (0 once today's free play went to a game)
+  mineFreeRemaining: number; // mining's own free mines left today
   reserveRemaining: number; // shared DC mining reserve headroom
   supplyCap: number;
-  balance: number; // CC wallet (for affording paid tiers)
-  dcBalance: number;
+  balance: number; // CC wallet
+  dcBalance: number; // DC wallet (pays for game tiers now)
   standing: "OK" | "GRACE" | "BANNED";
   resetsAtMs: number; // next daily refill (UTC midnight)
-  tierFees: number[]; // CC fee for tiers 1..3
+  tierFees: number[]; // DC fee for tiers 1..3
 };
 
-export type SpendPlayResult = { mode: "free" | "paid"; fee: number; balance: number };
+export type SpendPlayResult = {
+  mode: "free" | "paid";
+  fee: number;
+  balance: number; // CC wallet (unchanged by playing now)
+  dcBalance: number; // DC wallet after the entry
+};
 export type GameAward = {
   minted: number; // DC actually minted (capped at reserve)
   dcBalance: number;
@@ -2287,11 +2247,7 @@ export type GameAward = {
   reserveRemaining: number;
 };
 
-/**
- * A free game play is available while the games' daily counter is under the budget
- * AND today's single free allowance hasn't already been spent on mining
- * (freeGamesRemaining returns 0 once freeMinesUsed > 0).
- */
+/** A free game play is available while the games' daily budget isn't used up. */
 function hasFreePlay(m: Member): boolean {
   return freeGamesRemaining(m) > 0;
 }
@@ -2326,13 +2282,13 @@ export async function arcadeGate(email: string): Promise<ArcadeGate> {
         banned: false,
         onboardedAt: null,
         arcadeOnboardedAt: null,
+        dcSplitSeenAt: null,
       };
   applyDailyReset(m, now);
   return {
-    freeRemaining: freeGamesRemaining(m), // 0 once today's free play went to mining
+    freeRemaining: freeGamesRemaining(m), // free game plays left today
     freePlaysPerDay: config.games.freePlaysPerDay,
-    freeTrack: freeTrackOf(m),
-    mineFreeRemaining: freeMinesRemaining(m), // 0 once today's free play went to a game
+    mineFreeRemaining: freeMinesRemaining(m), // mining's own free mines left today
     reserveRemaining: reserveRemaining(s),
     supplyCap: config.mining.supplyCap,
     balance: round2(m.balance),
@@ -2345,9 +2301,9 @@ export async function arcadeGate(email: string): Promise<ArcadeGate> {
 
 /**
  * Spend ONE game entry — the authoritative gate for entering a game. Tier 0 uses
- * the shared free play (blocked once today's budget is gone); a paid tier burns
- * its CC fee (blocked if it would breach the soft floor). Mirrors mining's
- * free/paid split. `label` names the game in the BURN memo.
+ * the daily free play (blocked once today's budget is gone); a paid tier burns its
+ * DC fee (blocked if the member doesn't hold enough DC). `label` names the game in
+ * the BURN memo.
  */
 export async function spendGamePlay(
   actor: { email: string; name: string },
@@ -2364,42 +2320,41 @@ export async function spendGamePlay(
       if (!hasFreePlay(me)) {
         throw new LedgerError(
           "NO_FREE_PLAY",
-          me.freeMinesUsed > 0
-            ? "You spent today's free play on mining — pay to play a higher tier, or come back tomorrow."
-            : "You've used your free game play today. Pay to play a higher tier, or come back tomorrow.",
+          "You've used your free game play today. Pay a DC tier to play more, or come back tomorrow.",
         );
       }
       me.freeGamesUsed += 1;
-      return { mode: "free", fee: 0, balance: round2(me.balance) };
+      return { mode: "free", fee: 0, balance: round2(me.balance), dcBalance: round2(me.dcBalance) };
     }
 
     const fee = config.games.tierFees[tier - 1];
     if (fee == null) throw new LedgerError("BAD_TIER", "Unknown game tier.");
-    if (round2(me.balance - fee) < config.balanceFloor) {
+    if (round2(me.dcBalance) < fee) {
       throw new LedgerError(
-        "INSUFFICIENT_FUNDS",
-        `Not enough CC — paying ${fee} CC would drop you below the ${config.balanceFloor} CC floor.`,
+        "INSUFFICIENT_DC",
+        `Not enough DC — tier ${tier} costs ${fee} DC and you have ${round2(me.dcBalance)}.`,
       );
     }
-    me.balance = round2(me.balance - fee);
+    me.dcBalance = round2(me.dcBalance - fee);
     appendTransaction(draft, {
       type: "BURN",
+      currency: "DC",
       fromEmail: me.email,
       toEmail: null,
       amountCC: fee,
       offerId: null,
-      memo: `Burned ${fee} CC to play ${label} (tier ${tier})`,
+      memo: `Spent ${fee} DC to play ${label} (tier ${tier})`,
     });
-    return { mode: "paid", fee, balance: me.balance };
+    return { mode: "paid", fee, balance: round2(me.balance), dcBalance: me.dcBalance };
   });
 }
 
 /**
  * Reverse ONE game entry — the compensating action when a play can't be completed
  * (e.g. the AI grader timed out). Mirrors spendGamePlay: a free (tier 0) entry
- * returns the shared free play (so the member can spend it elsewhere today); a
- * paid entry credits the tier fee back to CC via an ADJUST row. Idempotency is the
- * caller's responsibility (close the session so it can't refund twice).
+ * returns the free game play; a paid entry credits the tier fee back to DC via an
+ * ADJUST row. Idempotency is the caller's responsibility (close the session so it
+ * can't refund twice).
  */
 export async function refundGamePlay(
   actor: { email: string; name: string },
@@ -2419,14 +2374,15 @@ export async function refundGamePlay(
 
     const fee = config.games.tierFees[tier - 1] ?? 0;
     if (fee > 0) {
-      me.balance = round2(me.balance + fee);
+      me.dcBalance = round2(me.dcBalance + fee);
       appendTransaction(draft, {
         type: "ADJUST",
+        currency: "DC",
         fromEmail: null,
         toEmail: me.email,
         amountCC: fee,
         offerId: null,
-        memo: `Refunded ${fee} CC — ${label} couldn't be graded (tier ${tier})`,
+        memo: `Refunded ${fee} DC — ${label} couldn't be graded (tier ${tier})`,
       });
     }
     return { mode: "paid", refunded: fee, balance: round2(me.balance) };
@@ -2597,175 +2553,6 @@ export async function convertDcToCc(
       dcBalance: me.dcBalance,
       ccBalance: me.balance,
       supply: totalDcSupply(draft),
-    };
-  });
-}
-
-// ── Dark Capsule Coin: buy with real money (Fruit Fund) ─────────────────────
-export type FruitFundPurchase = {
-  name: string; // buyer
-  dc: number; // DC credited
-  bdt: number; // taka paid
-  note: string;
-  createdAt: string;
-};
-
-export type FruitFundStatus = {
-  totalBdt: number;
-  contributions: number;
-  ministerEmail: string;
-  ministerName: string;
-  recent: FruitFundPurchase[]; // most-recent real-money DC purchases first
-};
-
-export async function fruitFundStatus(): Promise<FruitFundStatus> {
-  const s = await ensureLoaded();
-  const ministerEmail = config.dc.fruitMinisterEmail;
-  const purchases = s.transactions.filter((t) => t.type === "PURCHASE");
-  // bdtPaid isn't a structured field — parse it back out of the memo we author
-  // ("Bought <dc> DC for ৳<bdt> → Fruit Fund — <note>").
-  const recent: FruitFundPurchase[] = [...purchases]
-    .sort((a, b) => b.seq - a.seq)
-    .slice(0, 8)
-    .map((t) => {
-      const bdtMatch = t.memo.match(/৳\s*([\d.]+)/);
-      const noteMatch = t.memo.match(/—\s*(.+)$/);
-      return {
-        name: t.toEmail ? allowlistEntry(t.toEmail)?.name || t.toEmail : "—",
-        dc: round2(t.amountCC),
-        bdt: bdtMatch ? round2(Number(bdtMatch[1])) : 0,
-        note: noteMatch ? noteMatch[1].trim() : "",
-        createdAt: t.createdAt,
-      };
-    });
-  return {
-    totalBdt: round2(s.fruitFundBdt ?? 0),
-    contributions: purchases.length,
-    ministerEmail,
-    ministerName: allowlistEntry(ministerEmail)?.name || ministerEmail,
-    recent,
-  };
-}
-
-export type DcBuyPricing = {
-  baseBdtPerDc: number; // ৳ per DC at the ৳100 anchor (100 / buyDcPer100)
-  // how much DC common taka amounts buy; bonusPct = the extra DC/taka vs the
-  // ৳100 tier (so it reads 0 on ৳100 and climbs from there)
-  tiers: Array<{ bdt: number; dc: number; bonusPct: number }>;
-};
-
-/**
- * Reference pricing for buying DC with real money — a STABLE, generous on-ramp.
- * ৳100 is the anchor (buyDcPer100 DC, ~113), deliberately decoupled from the
- * volatile CC spread price so the real-money value doesn't swing tier-to-tier or
- * day-to-day. Bigger buys earn a bounded VOLUME BONUS on top, measured relative
- * to the ৳100 point so the anchor stays exact:
- *   volMult(bdt) = 1 + buyBonusMax · (1 − e^(−bdt / buyBonusScale))
- *   DC(bdt)      = (bdt/100) · buyDcPer100 · volMult(bdt)/volMult(100)
- * ⇒ ৳100 = buyDcPer100, ৳200 > 2×, ৳500 > 5×, ৳1000 > 10×. (DC scarcity still
- * governs the exit — the DC→CC convert; this on-ramp is intentionally simple and
- * stable.) The Fruit Minister still records the actual figures; this is the guide.
- */
-/**
- * DC credited for a real-money purchase of `bdt` taka — the stable anchor curve:
- * ৳100 → buyDcPer100 exactly, and bigger buys earn a bounded volume bonus on top
- * (৳200 > 2×, ৳500 > 5×, …). Deliberately decoupled from the volatile CC spread.
- * Shared by the Fruit-Fund pricing guide AND the DesertHouse purchase path so the
- * quoted rate and the recorded rate can never drift apart.
- */
-export function dcForBdt(bdt: number): number {
-  const c = config.dc;
-  const amt = Math.max(0, Number(bdt) || 0);
-  const volMult = (x: number) =>
-    1 + c.buyBonusMax * (1 - Math.exp(-x / Math.max(1, c.buyBonusScale)));
-  return round2((amt / 100) * c.buyDcPer100 * (volMult(amt) / volMult(100)));
-}
-
-export async function dcBuyPricing(): Promise<DcBuyPricing> {
-  const c = config.dc;
-  const per100 = c.buyDcPer100;
-  const raw = [100, 200, 500, 1000].map((bdt) => ({ bdt, dc: dcForBdt(bdt) }));
-  // Bonus vs the ৳100 tier's DC/taka, so the "bigger = better" step is visible.
-  const rate0 = raw[0].dc > 0 ? raw[0].dc / raw[0].bdt : 0;
-  const tiers = raw.map((t) => ({
-    ...t,
-    bonusPct: rate0 > 0 ? Math.round((t.dc / t.bdt / rate0 - 1) * 100) : 0,
-  }));
-  const baseBdtPerDc = per100 > 0 ? round2(100 / per100) : 0;
-  return { baseBdtPerDc, tiers };
-}
-
-/** True for the one member allowed to record real-money DC purchases. */
-export function isFruitMinister(email: string): boolean {
-  return (
-    email.trim().toLowerCase() ===
-    config.dc.fruitMinisterEmail.trim().toLowerCase()
-  );
-}
-
-export type BuyDcResult = {
-  targetEmail: string;
-  dcCredited: number;
-  bdtPaid: number;
-  dcBalance: number;
-  fruitFundBdt: number;
-};
-
-/**
- * Record a DC purchase made with real money. The cash is handled offline; this
- * only credits the buyer's DC and tallies the proceeds into the Capsule Fruit
- * Fund. Restricted to the Fruit Minister (config.dc.fruitMinisterEmail).
- */
-export async function buyDcWithMoney(
-  actor: { email: string; name: string },
-  input: { targetEmail: string; dcAmount: number; bdtPaid: number; note?: string },
-): Promise<BuyDcResult> {
-  if (!isFruitMinister(actor.email)) {
-    throw new LedgerError(
-      "NOT_ADMIN",
-      "Only the Fruit Minister can record DC purchases.",
-    );
-  }
-  const targetEmail = input.targetEmail.trim().toLowerCase();
-  const dcAmount = round2(Number(input.dcAmount));
-  const bdtPaid = round2(Number(input.bdtPaid));
-  const note = (input.note || "").trim();
-  return mutate((draft) => {
-    if (!isAllowed(targetEmail)) {
-      throw new LedgerError("NOT_MEMBER", "That buyer isn't a Capsule member.");
-    }
-    if (!Number.isFinite(dcAmount) || dcAmount <= 0) {
-      throw new LedgerError("INVALID", "DC amount must be more than 0.");
-    }
-    if (!Number.isFinite(bdtPaid) || bdtPaid < 0) {
-      throw new LedgerError("INVALID", "BDT paid can't be negative.");
-    }
-    const target = ensureMemberDraft(
-      draft,
-      targetEmail,
-      allowlistEntry(targetEmail)?.name || targetEmail,
-    );
-    assertNotBanned(target); // a banned member can't receive DC either
-
-    target.dcBalance = round2(target.dcBalance + dcAmount);
-    draft.fruitFundBdt = round2((draft.fruitFundBdt ?? 0) + bdtPaid);
-
-    appendTransaction(draft, {
-      type: "PURCHASE",
-      currency: "DC",
-      fromEmail: null,
-      toEmail: target.email,
-      amountCC: dcAmount,
-      offerId: null,
-      memo: `Bought ${dcAmount} DC for ৳${bdtPaid} → Fruit Fund${note ? ` — ${note}` : ""}`,
-    });
-
-    return {
-      targetEmail: target.email,
-      dcCredited: dcAmount,
-      bdtPaid,
-      dcBalance: target.dcBalance,
-      fruitFundBdt: draft.fruitFundBdt,
     };
   });
 }

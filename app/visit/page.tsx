@@ -21,7 +21,7 @@ import {
   Code2,
   Zap,
   Store,
-  Repeat,
+  Gamepad2,
   ShieldCheck,
   Loader2,
   LogOut,
@@ -206,12 +206,12 @@ const ECONOMY: Concept[] = [
   {
     icon: Coins,
     title: "Two coins",
-    body: "CC is the spendable currency — its value floats on how spread-out everyone's holdings are. DC is the rarer coin you forge by playing.",
+    body: "CC is the spendable currency — its value floats on how spread-out everyone's holdings are. DC is the play coin you forge by mining and winning games.",
   },
   {
-    icon: Repeat,
-    title: "Convert DC → CC",
-    body: "Turn the DC you've forged back into spendable CC. Converting destroys DC and reopens reserve headroom for more play.",
+    icon: Gamepad2,
+    title: "DC powers the Arcade",
+    body: "Spend the DC you forge on higher game tiers and extra mining. Every DC you spend flows back into the reserve, so there's always more to play for.",
   },
   {
     icon: Store,

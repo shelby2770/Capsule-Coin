@@ -191,7 +191,7 @@ function Mine() {
         toast.error(d.message || "Couldn't unlock that pack.");
       } else {
         const b = d as BuyPackOutcome;
-        toast.success(`Unlocked ${b.mines} mines · burned ${b.fee} CC 🔥`);
+        toast.success(`Unlocked ${b.mines} mines · spent ${b.fee} DC 🔥`);
         await Promise.all([refreshMe(), fetchStatus()]);
         emitLedgerChange();
       }
@@ -333,25 +333,18 @@ function Mine() {
               <span className="text-base font-semibold text-ember-400">DC</span>
             </div>
             <div className="mt-0.5 text-xs text-mute">
-              {formatCC(ccBalance)} CC available for pack fees
+              {formatCC(ccBalance)} CC in your wallet · packs cost DC
             </div>
           </div>
           <AttemptsBadge status={status} />
         </div>
-
-        {status?.freeTrack === "games" && (
-          <p className="mt-3 rounded-capsule border border-edge bg-ink-800/50 px-3 py-2 text-center text-xs text-mute">
-            You spent today&apos;s free play on a game, so free mining is locked until the
-            daily reset — pay-to-mine packs still work.
-          </p>
-        )}
 
         <div className="mt-4">
           {status && status.standing !== "OK" ? (
             <div className="rounded-capsule border border-ember-500/40 bg-ember-500/10 px-5 py-3 text-center text-sm text-ember-200">
               {status.standing === "BANNED"
                 ? "Mining is locked — your account is frozen."
-                : "Mining is locked while you're below the −500 CC floor. Sell or convert DC to recover."}
+                : "Mining is locked while you're below the −500 CC floor. Earn CC back to recover."}
             </div>
           ) : status && !status.canMine && needsPack && !status.nextTier ? (
             <div className="rounded-capsule border border-edge bg-ink-800/60 px-5 py-3 text-center text-sm text-mute">
@@ -363,7 +356,7 @@ function Mine() {
             </div>
           ) : status && status.reserveRemaining <= 0 ? (
             <div className="rounded-capsule border border-edge bg-ink-800/60 px-5 py-3 text-center text-sm text-mute">
-              The mining reserve is tapped out. Burned pay-to-mine fees reopen it.
+              The mining reserve is tapped out. Spending DC on games and packs reopens it.
             </div>
           ) : needsPack && status?.nextTier ? (
             <button
@@ -376,7 +369,7 @@ function Mine() {
               ) : (
                 <Flame size={18} />
               )}
-              Unlock {status.nextTier.mines} mines · burn {status.nextTier.fee} CC
+              Unlock {status.nextTier.mines} mines · spend {status.nextTier.fee} DC
             </button>
           ) : (
             <button
@@ -430,7 +423,7 @@ function Mine() {
         </div>
         <p className="mt-2 text-[11px] leading-relaxed text-mute">
           Fixed supply: only this reserve can ever be mined into circulation, so
-          DC can&apos;t inflate away. Converting DC → CC destroys DC and reopens
+          DC can&apos;t inflate away. Spending DC on games and packs reopens
           headroom — an active economy keeps mining alive.
         </p>
       </section>
@@ -540,7 +533,7 @@ function LadderStepper({ status }: { status: MiningStatus | null }) {
                 ) : null}
                 +{t.mines}
               </div>
-              <div className="mt-0.5 text-[11px] text-mute">burn {t.fee} CC</div>
+              <div className="mt-0.5 text-[11px] text-mute">spend {t.fee} DC</div>
             </div>
           );
         })}

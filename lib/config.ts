@@ -31,13 +31,13 @@ export const config = {
     // 10 brackets, so free reward scales 100% → 10% across the reserve. Paid mines
     // are not tapered. Set step to 0/negative to disable the taper (always full).
     rewardTaperStepCC: num(process.env.MINING_REWARD_TAPER_STEP, 500),
-    // Fixed DC reserve: at most this many NET DC can ever be mined into
-    // circulation (total mined − converted back). Converting DC→CC reopens
+    // Fixed DC reserve: at most this many NET DC can ever be in circulation
+    // (total mined/won − spent). Spending DC on games and mining packs reopens
     // headroom, so an active economy keeps mining alive — but total inflation can
     // never exceed this cap. This is what guarantees "no runaway inflation".
     supplyCap: num(process.env.MINING_SUPPLY_CAP, 5000),
-    // Pay-to-mine ladder (bought in order, refills daily). Fees are burned. Each
-    // tier's keyspace shrinks → progressively richer than free and the tier below.
+    // Pay-to-mine ladder (bought in order, refills daily). Fees are paid in DC and
+    // burned. Each tier's keyspace shrinks → progressively richer than free and below.
     ladder: [
       { fee: 20, mines: 5, keyspace: num(process.env.MINING_KEYSPACE_TIER1, 995_000_000) }, // ~10.0 matches, ~4.0 CC/mine — 50/50 net (median ≈ 0) at matchMax 0.7
       { fee: 50, mines: 10, keyspace: num(process.env.MINING_KEYSPACE_TIER2, 798_000_000) }, // ~12.5 matches, ~5.0 CC/mine — 50/50 net
@@ -66,8 +66,9 @@ export const config = {
   // Members may go negative down to this SOFT floor (a shared credit line). Crossing
   // it no longer hard-blocks a spend; it starts a grace countdown (see `grace`).
   balanceFloor: num(process.env.BALANCE_FLOOR, -500),
-  // Dark Capsule Coin (DC) — the elite second currency. Mining mints DC; DC is spent
-  // on non-food trades (DesertHouse/Gemini-routed) and converts back to CC.
+  // Dark Capsule Coin (DC) — the play-only second currency. Mining + arcade wins mint
+  // DC; DC is spent on game tiers and pay-to-mine packs. It no longer converts to CC
+  // (except the one-time split migration); the rate params below drive only that.
   dc: {
     // DC->CC conversion: CC = x * b(x) * m(S).
     //   b(x) = min(bulkRateMax, bulkFloor + bulkLogGain*ln(x) + bulkTailGain*x^bulkTailPow)
@@ -89,21 +90,6 @@ export const config = {
     clampMin: num(process.env.DC_CLAMP_MIN, 0.5),
     clampMax: num(process.env.DC_CLAMP_MAX, 1.5),
     minConvert: num(process.env.DC_MIN_CONVERT, 1), // smallest DC->CC conversion
-    // Buy DC with real money (admin-recorded). 0 = rate not set yet. Proceeds are
-    // tallied into the Capsule Fruit Fund, maintained by the Fruit Minister (Jakir).
-    bdtPerDc: num(process.env.DC_BDT_PER_DC, 0),
-    // Buying DC with taka — a STABLE, generous real-money on-ramp, deliberately
-    // decoupled from the volatile CC spread price so ৳100 reliably lands near
-    // buyDcPer100 (the whole point: focus on the real value of money). The ৳100
-    // buy is the anchor; bigger buys earn a bounded volume bonus on top:
-    //   volMult(bdt) = 1 + buyBonusMax·(1 − e^(−bdt/buyBonusScale))
-    //   DC(bdt)      = (bdt/100)·buyDcPer100 · volMult(bdt)/volMult(100)
-    // ⇒ ৳100 → buyDcPer100 exactly, ৳200 > 2×, ৳500 > 5×, ৳1000 > 10×.
-    buyDcPer100: num(process.env.DC_BUY_PER_100, 113),
-    buyBonusMax: num(process.env.DC_BUY_BONUS_MAX, 0.5),
-    buyBonusScale: num(process.env.DC_BUY_BONUS_SCALE, 500),
-    fruitMinisterEmail:
-      process.env.FRUIT_MINISTER_EMAIL || "jakir.hossen@orbitax.com",
   },
   // OpenRouter — the LLM backend for arcade games that need a model: grading the
   // Problem-Solving submissions, and (optionally) generating fresh AI Blitz MCQs.
@@ -122,15 +108,15 @@ export const config = {
   // Arcade — earn DC through mini-games (word guessing, type racing) alongside
   // mining. Wins mint DC (tx type GAME) against the SAME fixed mining reserve
   // (config.mining.supplyCap), so total DC inflation stays bounded. A paid entry
-  // burns CC (tx type BURN), mirroring the pay-to-mine ladder.
+  // spends DC (tx type BURN/DC), which reopens reserve headroom.
   games: {
     // One free play per UTC day, shared across the arcade GAMES (word / type /
     // problem / blitz) — a free member picks ONE game per day (tracked in
     // Member.freeGamesUsed, reset by applyDailyReset). Mining has its OWN separate
     // free allowance (config.mining.freePerDay). Paid plays are unlimited.
     freePlaysPerDay: num(process.env.GAMES_FREE_PLAYS_PER_DAY, 1),
-    // Pay-to-play ladder: burn CC to play ONE game at a higher tier. Index 0 = tier
-    // 1. Tier 0 (free) costs nothing. Mirrors the mining ladder's 20/50/100 CC.
+    // Pay-to-play ladder: spend DC to play ONE game at a higher tier. Index 0 = tier
+    // 1. Tier 0 (free) costs nothing. Mirrors the mining ladder's 20/50/100 DC.
     tierFees: [
       num(process.env.GAMES_TIER1_FEE, 20),
       num(process.env.GAMES_TIER2_FEE, 50),
@@ -302,9 +288,6 @@ export const config = {
     // Reject amounts above this — a guard against mis-parsed free text
     // ("...for 4000 cc"). The largest real trade to date is 300 CC.
     maxCc: num(process.env.DESERT_HOUSE_MAX_CC, 1000),
-    // Same guard for real-money DC purchases reported in chat (taka). Buy tiers
-    // top out at ৳1000; allow some headroom, reject clearly mis-parsed amounts.
-    maxBdt: num(process.env.DESERT_HOUSE_MAX_BDT, 5000),
   },
   // Anti-bot rate limit: more than `max` create-requests within `windowMs`
   // triggers a temporary block ("ban") for `blockMs`.

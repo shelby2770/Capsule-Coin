@@ -105,22 +105,22 @@ export function assertCanStart(
   if (gate.reserveRemaining <= 0) {
     throw new LedgerError(
       "RESERVE_EMPTY",
-      "The DC reserve is tapped out — wins pay nothing until members convert DC back to CC.",
+      "The DC reserve is tapped out — wins pay nothing until DC is spent back into the pool.",
     );
   }
   if (tier <= 0) {
     if (gate.freeRemaining <= 0) {
       throw new LedgerError(
         "NO_FREE_PLAY",
-        "You've used your free game play today. Pay to play a higher tier, or come back tomorrow.",
+        "You've used your free game play today. Pay a DC tier to play more, or come back tomorrow.",
       );
     }
   } else {
     const fee = gate.tierFees[tier - 1];
-    if (round2(gate.balance - fee) < config.balanceFloor) {
+    if (round2(gate.dcBalance) < fee) {
       throw new LedgerError(
-        "INSUFFICIENT_FUNDS",
-        `Not enough CC — paying ${fee} CC would drop you below the ${config.balanceFloor} CC floor.`,
+        "INSUFFICIENT_DC",
+        `Not enough DC — tier ${tier} costs ${fee} DC and you have ${round2(gate.dcBalance)}.`,
       );
     }
   }

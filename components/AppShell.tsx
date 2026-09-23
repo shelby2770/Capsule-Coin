@@ -13,6 +13,7 @@ import { NotificationsBell } from "@/components/NotificationsBell";
 import { ValueTicker } from "@/components/ValueTicker";
 import { StoryMode } from "@/components/StoryMode";
 import { ArcadeStory } from "@/components/ArcadeStory";
+import { DcSplitStory } from "@/components/DcSplitStory";
 import { StandingBanner } from "@/components/StandingBanner";
 import { DarkCoinLogo } from "@/components/DarkCoinLogo";
 import { formatCC, formatDC } from "@/lib/format";
@@ -25,8 +26,6 @@ import {
   FileSpreadsheet,
   Loader2,
   Lock,
-  Repeat,
-  Sprout,
 } from "lucide-react";
 
 const NAV: Array<{
@@ -39,8 +38,6 @@ const NAV: Array<{
   { href: "/leaderboard", label: "Leaderboard", icon: Trophy },
   { href: "/market", label: "Market", icon: Store },
   { href: "/arcade", label: "Arcade", icon: Gamepad2 },
-  { href: "/convert", label: "Convert", icon: Repeat },
-  { href: "/fund", label: "Fund", icon: Sprout },
   { href: "/ledger", label: "Ledger", icon: FileSpreadsheet },
 ];
 
@@ -196,9 +193,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <span className="hidden sm:inline">CC</span>
           </Link>
           <Link
-            href="/convert"
+            href="/arcade"
             className="chip border-ember-500/30 text-ember-300 hover:text-ember-200"
-            title="Your Dark Capsule Coin — tap to convert"
+            title="Your Dark Capsule Coin — tap to play the Arcade"
           >
             <DarkCoinLogo size={16} /> {formatDC(member?.dcBalance ?? 0)}
             <span className="hidden sm:inline">DC</span>
@@ -285,6 +282,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       <StoryMode />
       <ArcadeStory />
+      <DcSplitStory />
     </div>
   );
 }

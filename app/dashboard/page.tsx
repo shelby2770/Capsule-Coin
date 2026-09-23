@@ -7,13 +7,12 @@ import { useAuth } from "@/components/AuthProvider";
 import { useLeaderboard } from "@/lib/useLeaderboard";
 import { useTransactions } from "@/lib/useTransactions";
 import { useValue } from "@/lib/useValue";
-import { useDcRate } from "@/lib/useDcRate";
 import { CountUp } from "@/components/CountUp";
 import { formatCC, formatDC, formatBdt, BALANCE_WARN } from "@/lib/format";
 import { DarkCoinLogo } from "@/components/DarkCoinLogo";
 import { CoinLogo } from "@/components/CoinLogo";
 import { Sparkline } from "@/components/Sparkline";
-import type { TransactionPublic, ValueResponse, DcRateResponse } from "@/lib/types";
+import type { TransactionPublic, ValueResponse } from "@/lib/types";
 import {
   Wallet,
   Trophy,
@@ -117,48 +116,6 @@ function ValueCard({ data }: { data: ValueResponse | null }) {
   );
 }
 
-/** DC -> CC market conversion rate — the DC parallel to the CC value card. */
-function DcRateCard({ data }: { data: DcRateResponse | null }) {
-  return (
-    <section className="relative overflow-hidden rounded-[28px] border border-ember-500/25 bg-gradient-to-br from-ember-500/[0.12] via-ink-700/70 to-ink-700/70 p-6 shadow-glow-ember">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-ember-300/90">
-            <DarkCoinLogo size={15} /> DC → CC market rate
-          </div>
-          <div className="mt-2 flex flex-wrap items-baseline gap-x-3 gap-y-1">
-            <span className="text-4xl font-bold tabular-nums text-gradient-flame">
-              {data ? data.ccPerDc.toFixed(2) : "—"}
-            </span>
-            <span className="text-lg font-semibold text-ember-300">CC / DC</span>
-            {data && <ChangeBadge ch={data.change24h} />}
-          </div>
-          <div className="mt-1.5 truncate text-xs text-mute">
-            spot rate for 1 DC · supply ×{data ? data.multiplier : "—"} ·{" "}
-            {data ? formatDC(data.supply) : "—"} DC in market
-          </div>
-        </div>
-        <Link
-          href="/convert"
-          className="group flex shrink-0 flex-col items-end gap-1"
-          title="Convert DC to CC and open the rate history chart"
-        >
-          <Sparkline
-            series={data?.series ?? []}
-            width={160}
-            height={56}
-            id="dash-dc-spark"
-            stroke="#F97316"
-          />
-          <span className="text-xs text-ember-300/80 transition group-hover:text-ember-300">
-            Convert &amp; history →
-          </span>
-        </Link>
-      </div>
-    </section>
-  );
-}
-
 const TX_ICON: Record<
   TransactionPublic["type"],
   React.ComponentType<{ size?: number; className?: string }>
@@ -209,7 +166,6 @@ function WalletHome() {
   const { data, loading } = useLeaderboard();
   const { transactions } = useTransactions();
   const { data: value } = useValue();
-  const { data: dcRate } = useDcRate();
   const you = data?.rows.find((r) => r.isYou);
   const balance = member?.balance ?? 0;
   const dcBalance = member?.dcBalance ?? 0;
@@ -226,7 +182,7 @@ function WalletHome() {
           Welcome back, {member?.name?.split(" ")[0]}.{" "}
           {balance === 0 && dcBalance === 0
             ? "Head to Mine to forge your first DC."
-            : "Mine DC, convert to CC, or trade on the market."}
+            : "Mine DC, play the Arcade, or trade on the market."}
         </p>
       </div>
 
@@ -278,13 +234,13 @@ function WalletHome() {
                 />
                 <span className="text-lg font-semibold text-ember-400">DC</span>
               </div>
-              <div className="mt-1 text-xs text-mute">Elite coin — mine it, convert to CC.</div>
+              <div className="mt-1 text-xs text-mute">Play coin — mine it, spend it in the Arcade.</div>
               <div className="mt-3 flex items-center gap-4 text-xs">
                 <Link
-                  href="/convert"
+                  href="/arcade"
                   className="inline-flex items-center gap-1 text-ember-300/90 transition hover:text-ember-200"
                 >
-                  Convert to CC <ArrowRight size={13} />
+                  <Gamepad2 size={13} /> Play the Arcade
                 </Link>
                 <Link
                   href="/mine"
@@ -310,9 +266,8 @@ function WalletHome() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4">
         <ValueCard data={value} />
-        <DcRateCard data={dcRate} />
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">

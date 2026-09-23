@@ -232,7 +232,7 @@ export function NotificationsBell({
                       <AlertTriangle size={16} className="mt-0.5 shrink-0" />
                       <span>
                         Below the −500 CC floor ({formatCC(member?.balance ?? 0)} CC) —
-                        sell or convert DC → CC before the grace deadline.
+                        sell or earn CC back before the grace deadline.
                       </span>
                     </div>
                   )}

@@ -75,49 +75,24 @@ function Arcade() {
         </p>
       </div>
 
-      {/* free-play banner — ONE free choice a day: 3 free mines OR 1 free game,
-          never both. The first free action locks in the track until the reset. */}
+      {/* free-play banner — two independent daily budgets: free mines AND a free game. */}
       <div className="dc-card flex flex-wrap items-center gap-3 p-4">
         <div className="text-sm">
           {!status ? (
             <span className="text-mute">Loading…</span>
-          ) : status.freeTrack === "none" ? (
+          ) : (
             <span className="text-white">
-              One free play a day:{" "}
+              Free every day:{" "}
               <span className="text-ember-300">
                 {mineFree} free {mineFree === 1 ? "mine" : "mines"}
               </span>
-              <span className="text-mute"> or </span>
-              <span className="text-ember-300">1 free game</span>
-              <span className="text-mute"> — your pick. Paid tiers always open.</span>
-            </span>
-          ) : status.freeTrack === "mining" ? (
-            <span className="text-white">
-              You&apos;re mining today —{" "}
-              {mineFree > 0 ? (
-                <span className="text-ember-300">
-                  {mineFree} free {mineFree === 1 ? "mine" : "mines"} left
-                </span>
-              ) : (
-                <>
-                  <span className="text-mute">free mines used up, refills in </span>
-                  <span className="text-white">{fmtCountdown(status.resetsAtMs - now)}</span>
-                </>
-              )}
-              <span className="text-mute"> · free games locked till then · paid tiers always open</span>
-            </span>
-          ) : (
-            <span className="text-white">
-              You&apos;re playing games today —{" "}
-              {freeLeft > 0 ? (
-                <span className="text-ember-300">1 free play left</span>
-              ) : (
-                <>
-                  <span className="text-mute">free play used, refills in </span>
-                  <span className="text-white">{fmtCountdown(status.resetsAtMs - now)}</span>
-                </>
-              )}
-              <span className="text-mute"> · free mining locked till then · paid tiers always open</span>
+              <span className="text-mute"> and </span>
+              <span className="text-ember-300">
+                {freeLeft} free {freeLeft === 1 ? "game" : "games"}
+              </span>
+              <span className="text-mute">
+                {" "}left · resets in {fmtCountdown(status.resetsAtMs - now)} · higher tiers cost DC
+              </span>
             </span>
           )}
         </div>
@@ -125,7 +100,7 @@ function Arcade() {
 
       {reserve <= 0 && status && (
         <div className="rounded-2xl border border-ember-500/40 bg-ember-500/10 p-3 text-center text-sm text-ember-200">
-          The DC reserve is tapped out — wins pay nothing until members convert DC back to CC.
+          The DC reserve is tapped out — wins pay nothing until DC is spent back into the pool.
         </div>
       )}
 
@@ -206,7 +181,7 @@ function Arcade() {
         </div>
         <p className="mt-2 text-[11px] leading-relaxed text-mute">
           Mining and games mint DC from the same fixed reserve, so DC can&apos;t inflate away.
-          Converting DC → CC reopens headroom.
+          Spending DC on games and packs reopens headroom.
         </p>
       </section>
     </div>

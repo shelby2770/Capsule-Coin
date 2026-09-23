@@ -363,7 +363,7 @@ export async function submitProblem(
       feedback:
         refund.mode === "free"
           ? "The AI judge couldn't grade your solution in time, so your free play has been returned — try again or pick another game today."
-          : `The AI judge couldn't grade your solution in time, so your ${refund.refunded} CC entry has been refunded. Give it another go.`,
+          : `The AI judge couldn't grade your solution in time, so your ${refund.refunded} DC entry has been refunded. Give it another go.`,
       minted: 0,
       totalReward: 0,
       maxDc: cap,

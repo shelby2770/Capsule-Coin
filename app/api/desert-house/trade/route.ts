@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { timingSafeEqual } from "crypto";
 import {
   recordDesertHouseTrade,
-  recordDesertHousePurchase,
   LedgerError,
 } from "@/lib/excel/store";
 
@@ -173,45 +172,6 @@ export async function POST(req: Request) {
     if (food === false || str(food).toLowerCase() === "false") return "DC";
     return "CC";
   })();
-
-  // ── Purchase branch: real money (taka) → DC into the Fruit Fund ──────────
-  // A distinct message kind ("Riaz paid 500 taka to fruit fund for Eid"),
-  // reported ONLY by the Fruit Minister. Signalled by type:"purchase" or an
-  // amountBdt field. The Minister-only gate is enforced authoritatively in the
-  // store against the trusted Chat author (Gemini also gates it upstream).
-  const kind = str(src.type || body.type).trim().toLowerCase();
-  const amountBdt = Number(src.amountBdt ?? body.amountBdt ?? src.bdt ?? body.bdt);
-  const isPurchase =
-    kind === "purchase" || (Number.isFinite(amountBdt) && amountBdt > 0);
-  if (isPurchase) {
-    const pBuyer = str(src.buyerEmail || body.buyerEmail);
-    const reason = str(src.reason ?? body.reason ?? src.note ?? body.note);
-    if (
-      src.isTrade === false ||
-      !pBuyer ||
-      !Number.isFinite(amountBdt) ||
-      amountBdt <= 0
-    ) {
-      return respond(
-        asText,
-        { ok: true, recorded: false, skipped: true, reply: false, message: "" },
-        200,
-      );
-    }
-    try {
-      const result = await recordDesertHousePurchase({
-        authorEmail,
-        buyerEmail: pBuyer,
-        bdtPaid: amountBdt,
-        reason: reason || undefined,
-        externalId: messageId || undefined,
-        rawText: rawText || undefined,
-      });
-      return respond(asText, { ok: true, reply: result.recorded, ...result }, 200);
-    } catch (e) {
-      return handleError(asText, e);
-    }
-  }
 
   // Not a trade (Gem said so, or too little was parsed to record) → clean no-op,
   // nothing to post back.

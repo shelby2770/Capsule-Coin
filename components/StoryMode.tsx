@@ -6,7 +6,7 @@ import { DarkCoinLogo } from "@/components/DarkCoinLogo";
 import {
   Flame,
   Pickaxe,
-  Repeat,
+  Gamepad2,
   ShoppingBasket,
   AlertTriangle,
   ArrowRight,
@@ -25,37 +25,37 @@ const STEPS: Step[] = [
   {
     icon: Sparkles,
     title: "The Capsule is being renovated",
-    body: "Our Capsule — the home where all of us live — cracked open. While it's rebuilt, the old economy is getting an upgrade: a real crypto layer. Say hello to Dark Capsule Coin.",
+    body: "Our Capsule — the home where all of us live — cracked open. While it's rebuilt, the economy got an upgrade: two coins with two clear jobs. Say hello to Dark Capsule Coin.",
   },
   {
     icon: Flame,
     title: "Meet Dark Capsule Coin — DC 🔥",
-    body: "DC is the elite coin — rarer and more powerful than CC, forged rather than spent on lunch. You mine it, hold it, trade it, and convert it back to CC when you want.",
+    body: "DC is the play coin. You forge it by mining and by winning arcade games, and you spend it to play more. It's separate from CC — pure fun, no exchange rate to track.",
   },
   {
     icon: Coins,
     title: "Your mining history came with you",
-    body: "Nothing you earned was lost. Every CC you ever mined has been converted into DC and moved to your DC wallet, and your past mines now read in DC on your history. Your effort, upgraded to the elite coin.",
+    body: "Nothing you earned was lost. Every CC you ever mined became DC in your DC wallet, and your past mines now read in DC on your history. Your effort, upgraded to the elite coin.",
   },
   {
     icon: Pickaxe,
-    title: "Mining pays DC now",
-    body: "Free mining and pay-to-mine packs both mint DC. Paid packs still cost CC to unlock — you burn CC to forge DC.",
+    title: "Mining mints DC",
+    body: "Every UTC day you get free mines and a free game play — both earn DC. Want more mining? Unlock pay-to-mine packs with DC.",
   },
   {
     icon: ShoppingBasket,
-    title: "Food is CC · everything else is DC",
-    body: "Food trades stay in CC. Non-food trades — gadgets, gifts, services — settle in DC, recorded straight from the DesertHouse chat.",
+    title: "CC trades · DC plays",
+    body: "CC runs the real economy — every trade, big or small, settles in CC. DC is your arcade currency: earn it, spend it on games. The two don't cross over anymore.",
   },
   {
-    icon: Repeat,
-    title: "Convert DC → CC anytime",
-    body: "Turn DC into CC on the Convert page. Bigger conversions earn a better rate, and the rate climbs when DC is scarce — the more DC floating around, the less each one is worth.",
+    icon: Gamepad2,
+    title: "DC powers the Arcade",
+    body: "Spend DC to play higher game tiers and to unlock extra mining. Every DC you spend flows back into the pool, so there's always more to mine and win.",
   },
   {
     icon: AlertTriangle,
     title: "Mind the −500 floor",
-    body: "If your CC falls below −500 you get 3 days to recover, by selling or converting DC. Miss it and the account is frozen. And DC can never go negative.",
+    body: "If your CC falls below −500 you get 3 days to recover by earning CC back — selling or getting paid. Miss it and the account is frozen. DC can never go negative.",
   },
 ];
 

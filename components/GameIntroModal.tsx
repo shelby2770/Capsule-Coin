@@ -2,13 +2,13 @@
 
 import { useState } from "react";
 import { ArrowLeft, ArrowRight, Loader2, Check } from "lucide-react";
-import { formatCC } from "@/lib/format";
+import { formatDC } from "@/lib/format";
 import { Portal } from "@/components/Portal";
 
 export type TierOption = {
   tier: number; // 0 = free, 1..3 = paid
   label: string; // e.g. "Free", "Tier 1"
-  cost: number; // CC fee (0 for free) — shown on the tier button
+  cost: number; // DC fee (0 for free) — shown on the tier button
   detail: string; // e.g. "3 words"
   disabled?: boolean;
   note?: string; // why it's disabled, or an extra hint
@@ -113,7 +113,7 @@ export function GameIntroModal({
                       <div className="flex items-center justify-between">
                         <span className="text-sm font-semibold text-white">{t.label}</span>
                         <span className="text-xs text-ember-300">
-                          {t.cost > 0 ? `${formatCC(t.cost)} CC` : "Free"}
+                          {t.cost > 0 ? `${formatDC(t.cost)} DC` : "Free"}
                         </span>
                       </div>
                       <div className="mt-0.5 text-xs text-mute">{t.detail}</div>

@@ -34,6 +34,7 @@ export async function GET(req: Request) {
       banned: m.banned,
       onboardedAt: m.onboardedAt,
       arcadeOnboardedAt: m.arcadeOnboardedAt,
+      dcSplitSeenAt: m.dcSplitSeenAt,
     },
   });
 }
