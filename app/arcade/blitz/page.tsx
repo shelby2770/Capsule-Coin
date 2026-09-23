@@ -11,7 +11,7 @@ import { emitLedgerChange } from "@/lib/ledgerEvents";
 import { formatDC } from "@/lib/format";
 import type { ArcadeStatus, BlitzStart, BlitzSubmitResult, GameGuardResult } from "@/lib/types";
 import { toast } from "sonner";
-import { Zap, Loader2, Timer, Trophy, ArrowRight, Check, X, Ban, ShieldAlert, EyeOff } from "lucide-react";
+import { Zap, Loader2, Timer, Trophy, ArrowRight, Check, X, Ban, EyeOff } from "lucide-react";
 
 const LETTER = (i: number) => String.fromCharCode(65 + i);
 
@@ -382,9 +382,6 @@ function Blitz() {
             onCut={onCopyAttempt}
             onContextMenu={(e) => e.preventDefault()}
           >
-            <div className="mb-2 flex items-center gap-1.5 text-[11px] uppercase tracking-wider text-mute">
-              <ShieldAlert size={13} className="text-ember-400" /> Copy- &amp; screenshot-protected — no peeking
-            </div>
             <div className="relative">
               <div className={`transition duration-150 ${obscured ? "pointer-events-none blur-lg" : ""}`}>
                 <p className="whitespace-pre-wrap text-[15px] font-medium leading-relaxed text-white">{q.question}</p>

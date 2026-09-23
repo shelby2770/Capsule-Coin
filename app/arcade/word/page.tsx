@@ -26,7 +26,6 @@ import {
   Timer,
   Hash,
   Ban,
-  ShieldAlert,
   EyeOff,
 } from "lucide-react";
 import { Portal } from "@/components/Portal";
@@ -538,9 +537,6 @@ function WordGame() {
             onCut={onCopyAttempt}
             onContextMenu={(e) => e.preventDefault()}
           >
-            <div className="mb-2 flex items-center justify-center gap-1.5 text-[11px] uppercase tracking-wider text-mute">
-              <ShieldAlert size={13} className="text-ember-400" /> Copy- &amp; screenshot-protected
-            </div>
             <div className="mb-3 flex items-center justify-center">
               <span className="inline-flex items-center gap-1.5 rounded-full border border-edge bg-ink-800/60 px-3 py-1 text-xs">
                 <Hash size={12} className="text-ember-400" />

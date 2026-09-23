@@ -18,7 +18,7 @@ import type {
   ProblemScreenshotResult,
 } from "@/lib/types";
 import { toast } from "sonner";
-import { Code2, Loader2, Timer, Trophy, ArrowRight, Ban, ShieldAlert, Lightbulb, RotateCcw, EyeOff } from "lucide-react";
+import { Code2, Loader2, Timer, Trophy, ArrowRight, Ban, Lightbulb, RotateCcw, EyeOff } from "lucide-react";
 
 type Lang = "cpp" | "python";
 
@@ -447,9 +447,6 @@ function ProblemGame() {
 
           {/* problem statement (copy-guarded + screenshot-deterrent) */}
           <div className="dc-card p-5">
-            <div className="mb-2 flex items-center gap-1.5 text-[11px] uppercase tracking-wider text-mute">
-              <ShieldAlert size={13} className="text-ember-400" /> Copy- &amp; screenshot-protected — reading only
-            </div>
             <div className="relative">
               <div
                 onCopy={onCopyAttempt}
