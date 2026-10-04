@@ -24,6 +24,15 @@ export const ALLOWLIST: AllowlistEntry[] = [
   { email: "riaz.khan@orbitax.com", name: "Riaz Khan", role: "Associate Software Engineer" },
   { email: "sabbir.hasan@orbitax.com", name: "Sabbir Hasan", role: "Associate Software Engineer" },
   { email: "shafi.kader@orbitax.com", name: "Shafi Al Kader (Sopan)", role: "Principal Software Engineer" },
+  // ── New joiners (added 2026-10-04) ──
+  { email: "asif.anwar@orbitax.com", name: "Asif Anwar", role: "Associate Software Engineer" },
+  { email: "mamun.hossain@orbitax.com", name: "Mamun Hossain", role: "Principal Software Engineer" },
+  { email: "rejwanul.haque@orbitax.com", name: "Md. Rejwanul Haque (Rajon)", role: "Associate Software Engineer" },
+  { email: "rifatul.islam@orbitax.com", name: "Md. Rifatul Islam", role: "Software Engineer" },
+  { email: "shuhayel.shanto@orbitax.com", name: "Md. Shuhayel Alom Shanto", role: "Associate Software Engineer" },
+  { email: "mestu.paul@orbitax.com", name: "Mestu Paul", role: "Software Engineer" },
+  { email: "radoan.nabil@orbitax.com", name: "Radoan Islam Nabil", role: "Associate Software Engineer" },
+  { email: "ridwanur.siam@orbitax.com", name: "Ridwanur Rashid Siam", role: "Associate Software Engineer" },
 ];
 
 const byEmail = new Map(ALLOWLIST.map((e) => [e.email.toLowerCase(), e]));

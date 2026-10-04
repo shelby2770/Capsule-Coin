@@ -24,13 +24,13 @@ type Step = {
 const STEPS: Step[] = [
   {
     icon: Pickaxe,
-    title: "Mining got a little… repetitive",
-    body: "Swing, wait out the cooldown, swing again. Mining still forges DC and always will — but let's be honest, doing the same thing every day got old.",
+    title: "Mining isn't the only way to earn",
+    body: "Mining forges DC and always will — swing, wait out the cooldown, swing again. But if the same rhythm every day isn't your thing, there's a livelier way to earn the very same coin.",
   },
   {
     icon: Gamepad2,
-    title: "So we built an Arcade 🎮",
-    body: "A new way to earn the same coin: play, and forge DC by winning. Mining moved into the Arcade too — it's all one hub now, and every game pays out from the very same DC reserve.",
+    title: "Welcome to the Arcade 🎮",
+    body: "Play, and forge DC by winning. Mining lives in the Arcade too — it's all one hub, and every game pays out from the very same capped DC reserve, so the supply stays bounded.",
   },
   {
     icon: Puzzle,

@@ -7,7 +7,7 @@ import {
   Flame,
   Pickaxe,
   Gamepad2,
-  ShoppingBasket,
+  ClipboardList,
   AlertTriangle,
   ArrowRight,
   ArrowLeft,
@@ -19,43 +19,51 @@ type Step = {
   icon: React.ComponentType<{ size?: number; className?: string }>;
   title: string;
   body: string;
+  bullets?: string[];
 };
 
 const STEPS: Step[] = [
   {
     icon: Sparkles,
-    title: "The Capsule is being renovated",
-    body: "Our Capsule — the home where all of us live — cracked open. While it's rebuilt, the economy got an upgrade: two coins with two clear jobs. Say hello to Dark Capsule Coin.",
-  },
-  {
-    icon: Flame,
-    title: "Meet Dark Capsule Coin — DC 🔥",
-    body: "DC is the play coin. You forge it by mining and by winning arcade games, and you spend it to play more. It's separate from CC — pure fun, no exchange rate to track.",
+    title: "Welcome to the Capsule 🫧",
+    body: "The Capsule is our little in-house economy — trade snacks, favours and skills with the team using our own coins. There are two of them, with two clear jobs. Here's how it all works.",
   },
   {
     icon: Coins,
-    title: "Your mining history came with you",
-    body: "Nothing you earned was lost. Every CC you ever mined became DC in your DC wallet, and your past mines now read in DC on your history. Your effort, upgraded to the elite coin.",
+    title: "Capsule Coin — CC 💰",
+    body: "CC is the real currency. Every trade settles in CC: sell a burger, do a photoshoot, lend a hand — and CC moves from one wallet to another. It's a pure transfer economy, so your gain is someone else's spend; playing never mints it.",
+  },
+  {
+    icon: Flame,
+    title: "Dark Capsule Coin — DC 🔥",
+    body: "DC is the play coin. You forge it by mining and by winning arcade games, then spend it to play more. DC stays in the Arcade — it never converts to CC, so there's no exchange rate to track.",
   },
   {
     icon: Pickaxe,
-    title: "Mining mints DC",
-    body: "Every UTC day you get free mines and a free game play — both earn DC. Want more mining? Unlock pay-to-mine packs with DC.",
-  },
-  {
-    icon: ShoppingBasket,
-    title: "CC trades · DC plays",
-    body: "CC runs the real economy — every trade, big or small, settles in CC. DC is your arcade currency: earn it, spend it on games. The two don't cross over anymore.",
+    title: "Earn a little every day",
+    body: "Each UTC day you get 3 free mines and 1 free arcade play — they're independent, so grab both. Mining and game wins both mint DC from one shared, capped reserve, so the supply never runs wild.",
   },
   {
     icon: Gamepad2,
-    title: "DC powers the Arcade",
-    body: "Spend DC to play higher game tiers and to unlock extra mining. Every DC you spend flows back into the pool, so there's always more to mine and win.",
+    title: "Spend it to go bigger",
+    body: "Want more than the free draws? Spend DC to play higher game tiers (20 / 50 / 100 DC) or to unlock extra mining packs (5 / 10 / 20 attempts). Every DC you spend flows back into the reserve, so there's always more to mine and win.",
   },
   {
     icon: AlertTriangle,
     title: "Mind the −500 floor",
-    body: "If your CC falls below −500 you get 3 days to recover by earning CC back — selling or getting paid. Miss it and the account is frozen. DC can never go negative.",
+    body: "CC is a shared credit line, so your balance can dip negative — but only to −500. Cross it and you have 3 days to climb back above −500 by earning CC (sell something, get paid). Miss the deadline and the account freezes. DC can never go negative.",
+  },
+  {
+    icon: ClipboardList,
+    title: "House rules & fair play",
+    body: "A few ground rules before you dive in:",
+    bullets: [
+      "Keep trades real and honest — CC is trust between teammates.",
+      "DC is play-only and never converts back to CC.",
+      "Free mines and plays don't roll over — use them each day.",
+      "No copying or screenshotting Arcade puzzles to feed an AI — it trips a 3-day ban on that game.",
+      "Have fun. Mine, play, trade, repeat.",
+    ],
   },
 ];
 
@@ -111,9 +119,19 @@ export function StoryMode() {
           <h2 className="mt-4 font-display text-2xl font-semibold text-white">
             {step.title}
           </h2>
-          <p className="mt-2 min-h-[4.5rem] text-sm leading-relaxed text-mute">
-            {step.body}
-          </p>
+          <div className="mt-2 min-h-[6.5rem]">
+            <p className="text-sm leading-relaxed text-mute">{step.body}</p>
+            {step.bullets ? (
+              <ul className="mt-3 space-y-1.5 text-sm leading-relaxed text-mute">
+                {step.bullets.map((b, n) => (
+                  <li key={n} className="flex gap-2.5">
+                    <span aria-hidden className="mt-2 h-1 w-1 flex-none rounded-full bg-ember-500" />
+                    <span>{b}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </div>
 
           {/* progress dots */}
           <div className="mt-5 flex gap-1.5">
@@ -137,7 +155,7 @@ export function StoryMode() {
             </button>
             {last ? (
               <button className="btn-ember dc-ring" onClick={finish} disabled={saving}>
-                <Flame size={16} /> {saving ? "Entering…" : "Enter the new economy"}
+                <Flame size={16} /> {saving ? "Entering…" : "Enter the Capsule"}
               </button>
             ) : (
               <button className="btn-ember dc-ring" onClick={() => setI((n) => n + 1)}>
