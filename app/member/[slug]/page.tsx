@@ -24,6 +24,7 @@ import {
   PieChart,
   Sparkles,
   Banknote,
+  ChevronDown,
 } from "lucide-react";
 
 type Tx = {
@@ -56,6 +57,16 @@ type Profile = {
     totalBurned: number;
   };
   transactions: Tx[];
+  txTotal: number;
+  txHasMore: boolean;
+};
+
+type TxPage = {
+  transactions: Tx[];
+  total: number;
+  offset: number;
+  limit: number;
+  hasMore: boolean;
 };
 
 type Icon = React.ComponentType<{ size?: number; className?: string }>;
@@ -146,6 +157,10 @@ function MemberProfile() {
   const [p, setP] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
   const [missing, setMissing] = useState(false);
+  const [txs, setTxs] = useState<Tx[]>([]);
+  const [txTotal, setTxTotal] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
 
   useEffect(() => {
     if (status !== "member" || !slug) return;
@@ -153,7 +168,14 @@ function MemberProfile() {
       authedFetch(`/api/members/${slug}`)
         .then(async (r) => {
           if (r.status === 404) { setMissing(true); return; }
-          if (r.ok) setP((await r.json()) as Profile);
+          if (r.ok) {
+            const prof = (await r.json()) as Profile;
+            setP(prof);
+            // Reset the paged list to the fresh first page (also on ledger updates).
+            setTxs(prof.transactions);
+            setTxTotal(prof.txTotal);
+            setHasMore(prof.txHasMore);
+          }
         })
         .catch(() => {})
         .finally(() => setLoading(false));
@@ -161,6 +183,29 @@ function MemberProfile() {
     window.addEventListener(LEDGER_EVENT, load);
     return () => window.removeEventListener(LEDGER_EVENT, load);
   }, [status, slug, authedFetch]);
+
+  const loadMore = async () => {
+    if (loadingMore || !hasMore) return;
+    setLoadingMore(true);
+    try {
+      const r = await authedFetch(
+        `/api/members/${slug}/transactions?offset=${txs.length}&limit=50`,
+      );
+      if (r.ok) {
+        const page = (await r.json()) as TxPage;
+        setTxs((cur) => {
+          const seen = new Set(cur.map((t) => t.seq));
+          return [...cur, ...page.transactions.filter((t) => !seen.has(t.seq))];
+        });
+        setHasMore(page.hasMore);
+        setTxTotal(page.total);
+      }
+    } catch {
+      /* leave the list as-is on a failed page fetch */
+    } finally {
+      setLoadingMore(false);
+    }
+  };
 
   if (loading && !p) {
     return (
@@ -241,32 +286,58 @@ function MemberProfile() {
       <BalanceHistoryCard slug={slug} />
 
       <section className="capsule-card overflow-hidden">
-        <div className="border-b border-white/5 px-4 py-3 text-sm font-semibold text-white sm:px-6">
-          Transaction history
+        <div className="flex items-center justify-between gap-2 border-b border-white/5 px-4 py-3 sm:px-6">
+          <span className="text-sm font-semibold text-white">Transaction history</span>
+          {txTotal > 0 && (
+            <span className="text-[11px] text-mute">
+              {txs.length} of {txTotal}
+            </span>
+          )}
         </div>
-        {p.transactions.length === 0 ? (
+        {txs.length === 0 ? (
           <div className="px-4 py-10 text-center text-sm text-mute sm:px-6">No transactions yet.</div>
         ) : (
-          <ul className="divide-y divide-white/5">
-            {p.transactions.map((t) => {
-              const d = describe(t);
-              const cur = t.currency ?? "CC";
-              const fmt = cur === "DC" ? formatDC : formatCC;
-              return (
-                <li key={t.seq} className="flex items-center gap-3 px-4 py-3 sm:px-6">
-                  <d.Icon size={16} className={`shrink-0 ${d.tone}`} />
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-sm text-white/90">{d.text}</div>
-                    <div className="text-[11px] text-mute">{timeAgo(t.createdAt)}</div>
-                  </div>
-                  <div className={`shrink-0 text-sm font-semibold ${d.amtTone}`}>
-                    {d.sign}
-                    {fmt(t.amountCC)} <span className="text-xs text-mute">{cur}</span>
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
+          <>
+            <ul className="divide-y divide-white/5">
+              {txs.map((t) => {
+                const d = describe(t);
+                const cur = t.currency ?? "CC";
+                const fmt = cur === "DC" ? formatDC : formatCC;
+                return (
+                  <li key={t.seq} className="flex items-center gap-3 px-4 py-3 sm:px-6">
+                    <d.Icon size={16} className={`shrink-0 ${d.tone}`} />
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-sm text-white/90">{d.text}</div>
+                      <div className="text-[11px] text-mute">{timeAgo(t.createdAt)}</div>
+                    </div>
+                    <div className={`shrink-0 text-sm font-semibold ${d.amtTone}`}>
+                      {d.sign}
+                      {fmt(t.amountCC)} <span className="text-xs text-mute">{cur}</span>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+            {hasMore && (
+              <div className="border-t border-white/5 px-4 py-3 text-center sm:px-6">
+                <button
+                  onClick={loadMore}
+                  disabled={loadingMore}
+                  className="inline-flex items-center gap-1.5 text-sm text-teal-300 transition hover:text-teal-200 disabled:opacity-60"
+                >
+                  {loadingMore ? (
+                    <>
+                      <Loader2 size={15} className="animate-spin" /> Loading…
+                    </>
+                  ) : (
+                    <>
+                      <ChevronDown size={15} /> Load more ({txTotal - txs.length} older)
+                    </>
+                  )}
+                </button>
+              </div>
+            )}
+          </>
         )}
       </section>
     </div>

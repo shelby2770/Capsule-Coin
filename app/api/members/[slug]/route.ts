@@ -4,6 +4,10 @@ import { readState } from "@/lib/excel/store";
 import { isAllowed, allowlistEntry } from "@/lib/allowlist";
 import { round2 } from "@/lib/format";
 import { gateResponse } from "@/lib/http";
+import { pageMemberTx } from "@/lib/memberTx";
+
+/** Rows per page in the profile transaction history (first page here; rest via the paging route). */
+const TX_PAGE = 50;
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -38,7 +42,6 @@ export async function GET(
   const sharePct =
     positiveSupply > 0 ? Number(((Math.max(0, balance) / positiveSupply) * 100).toFixed(1)) : 0;
 
-  const nameOf = (e: string | null) => (e ? allowlistEntry(e)?.name || e : "");
   const mine = state.transactions.filter(
     (t) => t.fromEmail === email || t.toEmail === email,
   );
@@ -57,33 +60,9 @@ export async function GET(
     }
   }
 
-  const transactions = [...mine]
-    .sort((a, b) => b.seq - a.seq)
-    .slice(0, 50)
-    .map((t) => {
-      let direction: "in" | "out" | "mine" | "burn" | "adjust" = "adjust";
-      let counterpartyName = "";
-      if (t.type === "MINE") direction = "mine";
-      else if (t.type === "BURN") direction = "burn";
-      else if (t.type === "ADJUST") direction = "adjust";
-      else if (t.toEmail === email) {
-        direction = "in";
-        counterpartyName = nameOf(t.fromEmail);
-      } else {
-        direction = "out";
-        counterpartyName = nameOf(t.toEmail);
-      }
-      return {
-        seq: t.seq,
-        type: t.type,
-        direction,
-        counterpartyName,
-        amountCC: t.amountCC,
-        currency: t.currency,
-        memo: t.memo,
-        createdAt: t.createdAt,
-      };
-    });
+  // First page of the transaction history; older pages load via
+  // GET /api/members/[slug]/transactions?offset=…&limit=…
+  const txPage = pageMemberTx(state.transactions, email, 0, TX_PAGE);
 
   return NextResponse.json({
     email,
@@ -104,6 +83,8 @@ export async function GET(
       totalMined: round2(totalMined),
       totalBurned: round2(totalBurned),
     },
-    transactions,
+    transactions: txPage.transactions,
+    txTotal: txPage.total,
+    txHasMore: txPage.hasMore,
   });
 }
