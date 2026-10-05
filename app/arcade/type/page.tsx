@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/AppShell";
 import { useAuth } from "@/components/AuthProvider";
@@ -57,7 +57,11 @@ function TypeRace() {
   const [submitting, setSubmitting] = useState(false);
   const [reattempting, setReattempting] = useState(false);
   const [result, setResult] = useState<TypeSubmitResult | null>(null);
-  const [now, setNow] = useState(() => Date.now());
+  // `armed` flips once (via a single timeout) when the get-ready countdown ends.
+  // No per-frame clock lives in this component, so typing never competes with a
+  // timer re-render; the live metrics and countdown each run their own interval
+  // in the small child components below (RaceStats / Countdown).
+  const [armed, setArmed] = useState(false);
   const keystrokesRef = useRef(0);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -78,12 +82,22 @@ function TypeRace() {
     };
   }, [authedFetch]);
 
-  // Live timer while racing.
+  // Arm the input once the get-ready countdown elapses (startedAtMs is set in the
+  // future). A single timeout flips `armed` — no polling clock in this component.
   useEffect(() => {
-    if (!race || result) return;
-    const id = setInterval(() => setNow(Date.now()), 250);
-    return () => clearInterval(id);
-  }, [race, result]);
+    if (!race) {
+      setArmed(false);
+      return;
+    }
+    const delay = race.startedAtMs - Date.now();
+    if (delay <= 0) {
+      setArmed(true);
+      return;
+    }
+    setArmed(false);
+    const id = setTimeout(() => setArmed(true), delay + 20);
+    return () => clearTimeout(id);
+  }, [race]);
 
   const target = race?.text ?? "";
   // Split the paragraph into word tokens (with their start offset), so completed
@@ -104,19 +118,45 @@ function TypeRace() {
   const curOk = wi <= lastIdx && words[wi] ? words[wi].startsWith(cur) : false;
   const correctChars = (tokens[wi]?.start ?? target.length) + (curOk ? cur.length : 0);
 
-  const elapsedSec = race ? Math.max(0, (now - race.startedAtMs) / 1000) : 0;
-  const liveWpm = elapsedSec > 1 ? Math.round((correctChars / 5 / elapsedSec) * 60) : 0;
-  const progress = target.length ? Math.round((correctChars / target.length) * 100) : 0;
-
-  // Get-ready breather: startedAtMs is set in the FUTURE, so the clock and typing
-  // only begin once `now` passes it. Until then we show a countdown over the passage.
-  const armed = race ? now >= race.startedAtMs : true;
-  const countdownLeft = race ? Math.max(0, Math.ceil((race.startedAtMs - now) / 1000)) : 0;
   // Current-word error: the typed text isn't a prefix of the target word (a wrong
   // letter), or it runs past the word's end. Drives the red input box + red word —
   // the mistyped characters stay in the INPUT, so the passage never shifts.
   const curWord = words[wi] ?? "";
   const curError = cur.length > 0 && (!curWord.startsWith(cur) || cur.length > curWord.length);
+
+  // Passage split so a keystroke only re-renders the CURRENT word, not the whole
+  // paragraph. The locked-in prefix (green) and the not-yet-typed suffix (muted)
+  // are memoized on [tokens, wi], so their element identities stay stable across
+  // keystrokes and React skips reconciling them; only the current word's node
+  // (built fresh from `cur` / `curError` below) changes as you type. That's what
+  // makes the red mistake mark appear instantly instead of a frame late.
+  const sepBefore = useCallback(
+    (i: number) =>
+      target.slice(i === 0 ? 0 : tokens[i - 1].start + tokens[i - 1].word.length, tokens[i].start),
+    [target, tokens],
+  );
+  const framePrefix = useMemo(() => {
+    const nodes: ReactNode[] = [];
+    for (let i = 0; i < wi; i++) {
+      const before = sepBefore(i);
+      if (before) nodes.push(<span key={`s${i}`} className="text-emerald-400">{before}</span>);
+      nodes.push(<span key={`w${i}`} className="text-emerald-400">{tokens[i].word}</span>);
+    }
+    if (wi < tokens.length) {
+      const before = sepBefore(wi);
+      if (before) nodes.push(<span key={`s${wi}`} className="text-emerald-400">{before}</span>);
+    }
+    return nodes;
+  }, [tokens, wi, sepBefore]);
+  const frameSuffix = useMemo(() => {
+    const nodes: ReactNode[] = [];
+    for (let i = wi + 1; i < tokens.length; i++) {
+      const before = sepBefore(i);
+      if (before) nodes.push(<span key={`s${i}`} className="text-mute/40">{before}</span>);
+      nodes.push(<span key={`w${i}`} className="text-mute">{tokens[i].word}</span>);
+    }
+    return nodes;
+  }, [tokens, wi, sepBefore]);
 
   const tiers: TierOption[] = useMemo(() => {
     const fees = status?.tierFees ?? [20, 50, 100];
@@ -157,7 +197,6 @@ function TypeRace() {
       startedAtMs: s.startedAtMs,
       reAttemptsLeft: s.reAttemptsLeft,
     });
-    setNow(Date.now());
     setTimeout(() => inputRef.current?.focus(), 50);
   }, []);
 
@@ -359,23 +398,14 @@ function TypeRace() {
         <>
           <div className="dc-card flex items-center justify-around p-4 text-center">
             {armed ? (
-              <>
-                <Metric icon={<Timer size={15} />} label="Time" value={`${Math.floor(elapsedSec)}s`} />
-                <Metric icon={<Gauge size={15} />} label="WPM" value={String(liveWpm)} ember />
-                <Metric label="Progress" value={`${progress}%`} />
-                {race.reAttemptsLeft > 0 && (
-                  <Metric icon={<RotateCcw size={15} />} label="Retries" value={String(race.reAttemptsLeft)} />
-                )}
-              </>
+              <RaceStats
+                startedAtMs={race.startedAtMs}
+                correctChars={correctChars}
+                targetLen={target.length}
+                reAttemptsLeft={race.reAttemptsLeft}
+              />
             ) : (
-              <div className="flex flex-col items-center gap-0.5">
-                <span className="text-[11px] uppercase tracking-widest text-mute">
-                  Get ready · read the passage
-                </span>
-                <span className="font-display text-4xl font-bold tabular-nums text-ember-300">
-                  {countdownLeft}
-                </span>
-              </div>
+              <Countdown targetMs={race.startedAtMs} />
             )}
           </div>
 
@@ -383,43 +413,30 @@ function TypeRace() {
               Mistyped/overrun text lives in the input box below, so this can't shift. */}
           <div className="dc-card cursor-text p-5 leading-relaxed" onClick={() => inputRef.current?.focus()}>
             <p className="whitespace-pre-wrap break-words font-mono text-[15px]">
-              {tokens.map((tk, i) => {
-                const before = target.slice(
-                  i === 0 ? 0 : tokens[i - 1].start + tokens[i - 1].word.length,
-                  tk.start,
-                );
-                const sep = before ? (
-                  <span key={`s${i}`} className={i <= wi || complete ? "text-emerald-400" : "text-mute/40"}>
-                    {before}
-                  </span>
-                ) : null;
-                let node: React.ReactNode;
-                if (i < wi || complete) {
-                  // Completed → green. `complete` flips the whole passage green the
-                  // instant the last word matches, so it reads as done during the
-                  // (brief) submit round-trip before the results overlay appears.
-                  node = <span className="text-emerald-400">{tk.word}</span>;
-                } else if (i === wi) {
-                  node = curError ? (
+              {framePrefix}
+              {(() => {
+                // The ONLY part that re-renders per keystroke. `complete` flips the
+                // whole passage green the instant the last word matches (held during
+                // the brief submit round-trip before the results overlay appears).
+                const w = tokens[wi]?.word ?? "";
+                if (complete || wi >= tokens.length) {
+                  return <span className="text-emerald-400">{w}</span>;
+                }
+                if (curError) {
+                  return (
                     <span className="rounded bg-red-500/25 text-red-200 underline decoration-red-400/70 underline-offset-2">
-                      {tk.word}
-                    </span>
-                  ) : (
-                    <span className="underline decoration-white/30 underline-offset-2">
-                      <span className="text-white">{tk.word.slice(0, cur.length)}</span>
-                      <span className="text-mute">{tk.word.slice(cur.length)}</span>
+                      {w}
                     </span>
                   );
-                } else {
-                  node = <span className="text-mute">{tk.word}</span>; // not yet typed
                 }
                 return (
-                  <span key={`w${i}`}>
-                    {sep}
-                    {node}
+                  <span className="underline decoration-white/30 underline-offset-2">
+                    <span className="text-white">{w.slice(0, cur.length)}</span>
+                    <span className="text-mute">{w.slice(cur.length)}</span>
                   </span>
                 );
-              })}
+              })()}
+              {frameSuffix}
             </p>
           </div>
 
@@ -540,6 +557,61 @@ function Metric({
       <div className={`mt-0.5 font-display text-xl font-bold ${ember ? "text-ember-300" : "text-white"}`}>
         {value}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Live race metrics. Owns its OWN 250ms clock so the ticking Time/WPM/Progress
+ * never re-render the passage or the input in the parent — only this small card.
+ */
+function RaceStats({
+  startedAtMs,
+  correctChars,
+  targetLen,
+  reAttemptsLeft,
+}: {
+  startedAtMs: number;
+  correctChars: number;
+  targetLen: number;
+  reAttemptsLeft: number;
+}) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 250);
+    return () => clearInterval(id);
+  }, []);
+  const elapsedSec = Math.max(0, (now - startedAtMs) / 1000);
+  const liveWpm = elapsedSec > 1 ? Math.round((correctChars / 5 / elapsedSec) * 60) : 0;
+  const progress = targetLen ? Math.round((correctChars / targetLen) * 100) : 0;
+  return (
+    <>
+      <Metric icon={<Timer size={15} />} label="Time" value={`${Math.floor(elapsedSec)}s`} />
+      <Metric icon={<Gauge size={15} />} label="WPM" value={String(liveWpm)} ember />
+      <Metric label="Progress" value={`${progress}%`} />
+      {reAttemptsLeft > 0 && (
+        <Metric icon={<RotateCcw size={15} />} label="Retries" value={String(reAttemptsLeft)} />
+      )}
+    </>
+  );
+}
+
+/** Get-ready countdown. Owns its own interval so it never re-renders the parent. */
+function Countdown({ targetMs }: { targetMs: number }) {
+  const [left, setLeft] = useState(() => Math.max(0, Math.ceil((targetMs - Date.now()) / 1000)));
+  useEffect(() => {
+    const id = setInterval(
+      () => setLeft(Math.max(0, Math.ceil((targetMs - Date.now()) / 1000))),
+      100,
+    );
+    return () => clearInterval(id);
+  }, [targetMs]);
+  return (
+    <div className="flex flex-col items-center gap-0.5">
+      <span className="text-[11px] uppercase tracking-widest text-mute">
+        Get ready · read the passage
+      </span>
+      <span className="font-display text-4xl font-bold tabular-nums text-ember-300">{left}</span>
     </div>
   );
 }
