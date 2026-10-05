@@ -61,3 +61,14 @@ function initAdmin(): App {
 const adminApp = initAdmin();
 export const adminAuth: Auth = getAuth(adminApp);
 export const adminDb: Firestore = getFirestore(adminApp);
+
+// Drop `undefined` fields on write instead of throwing. Firestore's default
+// rejects any explicit `undefined` value (e.g. an AI Blitz MCQ with no
+// `explanation`), which otherwise 500s the whole document write. `settings()`
+// must run before the instance is first used and only once, so guard against a
+// reused instance (dev hot-reload / warm serverless) where it would throw.
+try {
+  adminDb.settings({ ignoreUndefinedProperties: true });
+} catch {
+  /* already configured on a reused Firestore instance — safe to ignore */
+}
