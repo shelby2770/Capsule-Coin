@@ -215,7 +215,9 @@ export const config = {
     // large fraction of it trips a temporary, game-scoped ban.
     problem: {
       // Seconds to solve one problem — server-anchored; auto-submits at zero.
-      secToSolve: num(process.env.GAMES_PROBLEM_SEC, 300), // 5 minutes
+      // Fixed at 5 minutes for EVERY tier. Deliberately NOT env-tunable: a stray
+      // GAMES_PROBLEM_SEC once shrank the live free tier to 30s, so it's hardcoded.
+      secToSolve: 300, // 5 minutes, all tiers
       // Hard ceiling (ms) on how long the AI grader may take on submit. If grading
       // exceeds this (or the grader errors out), the entry is REFUNDED — CC back for
       // a paid tier, the free play returned for the free tier — and no DC is minted.

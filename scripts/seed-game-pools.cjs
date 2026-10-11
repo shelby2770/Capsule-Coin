@@ -5,11 +5,14 @@
  *   node scripts/seed-game-pools.cjs                      # dry run (default)
  *   node scripts/seed-game-pools.cjs --commit             # write to Firestore
  *   node scripts/seed-game-pools.cjs --commit --replace   # overwrite instead of merge
+ *   node scripts/seed-game-pools.cjs --only problems --commit   # re-seed ONLY problems (merge)
  *   node scripts/seed-game-pools.cjs --doc capsule_test --commit   # isolated test pools
  *
  * Flags:
  *   --commit         actually write (default is a dry run that writes nothing)
  *   --replace        overwrite each doc (default MERGES new items, de-duplicated)
+ *   --only <list>    limit to these pools (comma list of words,paragraphs,problems,mcqs;
+ *                    singular ok). Default seeds all. e.g. --only problems
  *   --doc <id>       namespace, matching lib/games/common.ts: "state" (default) →
  *                    plain collections; anything else → "<id>__wordPool" etc.
  *
@@ -39,6 +42,19 @@ const opt = (n) => { const i = argv.indexOf(`--${n}`); return i >= 0 ? argv[i + 
 const DOC = opt("doc") || process.env.LEDGER_DOC_ID || "state";
 const COMMIT = flag("commit");
 const REPLACE = flag("replace");
+// --only <csv>: limit to specific pools (default = all). Accepts singular/plural.
+const ONLY_ALIAS = {
+  word: "words", words: "words",
+  paragraph: "paragraphs", paragraphs: "paragraphs", para: "paragraphs",
+  problem: "problems", problems: "problems",
+  mcq: "mcqs", mcqs: "mcqs",
+};
+const ONLY = (opt("only") || "")
+  .split(",")
+  .map((s) => s.trim().toLowerCase())
+  .filter(Boolean)
+  .map((s) => ONLY_ALIAS[s] || s);
+const want = (name) => ONLY.length === 0 || ONLY.includes(name);
 
 // Must match lib/games/common.ts namespacing.
 const NS = DOC === "state" ? "" : `${DOC}__`;
@@ -158,19 +174,21 @@ async function seedMcqs() {
   console.log(`Seeding game pools → doc namespace "${DOC}" (${NS || "prod/plain"})`);
   console.log(`Mode: ${COMMIT ? (REPLACE ? "COMMIT + REPLACE" : "COMMIT + MERGE") : "DRY RUN (no writes)"}\n`);
 
-  const w = await seedWords();
-  const p = await seedParagraphs();
-  const pr = await seedProblems();
-  const mc = await seedMcqs();
+  if (ONLY.length) console.log(`Only seeding: ${ONLY.join(", ")}\n`);
+  const w = want("words") ? await seedWords() : [];
+  const p = want("paragraphs") ? await seedParagraphs() : [];
+  const pr = want("problems") ? await seedProblems() : [];
+  const mc = want("mcqs") ? await seedMcqs() : [];
 
-  console.log("Words:");
-  w.forEach((r) => console.log(`  ${r.doc}: existing ${r.existing} + incoming ${r.incoming} -> ${r.after}`));
-  console.log("Paragraphs:");
-  p.forEach((r) => console.log(`  ${r.doc}: existing ${r.existing} + incoming ${r.incoming} -> ${r.after}`));
-  console.log("Problems:");
-  pr.forEach((r) => console.log(`  ${r.doc}: existing ${r.existing} + incoming ${r.incoming} -> ${r.after}`));
-  console.log("MCQs:");
-  mc.forEach((r) => console.log(`  ${r.doc}: existing ${r.existing} + incoming ${r.incoming} -> ${r.after}`));
+  const section = (label, rows) => {
+    if (!rows.length) return;
+    console.log(`${label}:`);
+    rows.forEach((r) => console.log(`  ${r.doc}: existing ${r.existing} + incoming ${r.incoming} -> ${r.after}`));
+  };
+  section("Words", w);
+  section("Paragraphs", p);
+  section("Problems", pr);
+  section("MCQs", mc);
 
   const totalWords = w.reduce((a, r) => a + r.after, 0);
   const totalParas = p.reduce((a, r) => a + r.after, 0);
