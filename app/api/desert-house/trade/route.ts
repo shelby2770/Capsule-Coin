@@ -152,36 +152,52 @@ export async function POST(req: Request) {
   const src: Record<string, unknown> =
     gem && typeof gem === "object" ? (gem as Record<string, unknown>) : body;
 
-  const sellerEmail = str(src.sellerEmail);
-  const buyerEmail = str(src.buyerEmail);
-  const item = str(src.item);
-  const amountCC = Number(src.amountCC);
   const authorEmail = str(body.authorEmail) || str(src.authorEmail);
   const messageId =
     str(body.messageId) || str(body.externalId) || str(src.messageId);
   const rawText = str(body.rawText) || str(src.rawText);
 
-  // Currency routing: Gemini classifies food vs non-food. "DC" for non-food,
-  // "CC" for food. Accepts an explicit `currency`, or an `isFood` boolean; the
-  // safe default is CC (DesertHouse is primarily a food-ordering space).
-  const currency: "CC" | "DC" = (() => {
-    const c = str(src.currency || body.currency).trim().toUpperCase();
+  // Currency routing for ONE leg. Accepts an explicit `currency` or an `isFood`
+  // boolean; the safe default is CC. (DC is no longer traded via DesertHouse, so
+  // the prompts always emit CC — this stays only for back-compat.)
+  const currencyOf = (o: Record<string, unknown>): "CC" | "DC" => {
+    const c = str(o.currency ?? body.currency).trim().toUpperCase();
     if (c === "DC") return "DC";
     if (c === "CC") return "CC";
-    const food = src.isFood ?? body.isFood;
+    const food = o.isFood ?? body.isFood;
     if (food === false || str(food).toLowerCase() === "false") return "DC";
     return "CC";
-  })();
+  };
 
-  // Not a trade (Gem said so, or too little was parsed to record) → clean no-op,
-  // nothing to post back.
-  const recordable =
-    !!sellerEmail &&
-    !!buyerEmail &&
-    !!item &&
-    Number.isFinite(amountCC) &&
-    amountCC > 0;
-  if (src.isTrade === false || !recordable) {
+  // A split trade (one seller → many buyers, or one buyer → many sellers) arrives
+  // as `gem.trades: [...]`, one object per counterparty. A normal 1:1 trade is a
+  // single object with no `trades` — treated as a one-element list for back-compat.
+  const rawLegs: Record<string, unknown>[] =
+    Array.isArray(src.trades) && src.trades.length
+      ? (src.trades as unknown[]).filter(
+          (x): x is Record<string, unknown> => !!x && typeof x === "object",
+        )
+      : [src];
+
+  const legs = rawLegs
+    .map((o) => ({
+      sellerEmail: str(o.sellerEmail),
+      buyerEmail: str(o.buyerEmail),
+      item: str(o.item),
+      amountCC: Number(o.amountCC),
+      currency: currencyOf(o),
+    }))
+    .filter(
+      (l) =>
+        !!l.sellerEmail &&
+        !!l.buyerEmail &&
+        !!l.item &&
+        Number.isFinite(l.amountCC) &&
+        l.amountCC > 0,
+    );
+
+  // Not a trade (Gem said so, or nothing parseable) → clean no-op, nothing to post.
+  if (src.isTrade === false || legs.length === 0) {
     return respond(
       asText,
       { ok: true, recorded: false, skipped: true, reply: false, message: "" },
@@ -189,19 +205,50 @@ export async function POST(req: Request) {
     );
   }
 
-  try {
-    const result = await recordDesertHouseTrade({
-      sellerEmail,
-      buyerEmail,
-      amountCC,
-      item,
-      authorEmail,
-      currency,
-      externalId: messageId || undefined,
-      rawText: rawText || undefined,
-    });
-    return respond(asText, { ok: true, reply: result.recorded, ...result }, 200);
-  } catch (e) {
-    return handleError(asText, e);
+  // Record each leg independently and idempotently. The first leg keeps the bare
+  // messageId as its externalId (so an existing 1:1 record never double-fires);
+  // extra split legs get a "#i" suffix so each one dedupes on its own.
+  const results: Array<Awaited<ReturnType<typeof recordDesertHouseTrade>>> = [];
+  const errors: unknown[] = [];
+  for (let i = 0; i < legs.length; i++) {
+    const externalId = messageId ? (i === 0 ? messageId : `${messageId}#${i}`) : undefined;
+    try {
+      results.push(
+        await recordDesertHouseTrade({
+          ...legs[i],
+          authorEmail,
+          externalId,
+          rawText: rawText || undefined,
+        }),
+      );
+    } catch (e) {
+      errors.push(e);
+    }
   }
+
+  // Single leg → preserve the original response shape exactly (incl. error mapping).
+  if (legs.length === 1) {
+    if (errors.length) return handleError(asText, errors[0]);
+    const result = results[0];
+    return respond(asText, { ok: true, reply: result.recorded, ...result }, 200);
+  }
+
+  // Split trade → combined summary: each recorded leg's line, plus any failures.
+  const recordedMsgs = results.filter((r) => r.recorded).map((r) => r.message);
+  const anyRecorded = recordedMsgs.length > 0;
+  const parts = [...recordedMsgs];
+  if (errors.length) parts.push(`${errors.length} leg(s) could not be recorded.`);
+  return respond(
+    asText,
+    {
+      ok: true,
+      reply: anyRecorded,
+      recorded: anyRecorded,
+      legs: legs.length,
+      recordedCount: recordedMsgs.length,
+      failedCount: errors.length,
+      message: parts.join("\n"),
+    },
+    200,
+  );
 }
