@@ -25,7 +25,7 @@ export const ALLOWLIST: AllowlistEntry[] = [
   { email: "sabbir.hasan@orbitax.com", name: "Sabbir Hasan", role: "Associate Software Engineer" },
   { email: "shafi.kader@orbitax.com", name: "Shafi Al Kader (Sopan)", role: "Principal Software Engineer" },
   // ── New joiners (added 2026-10-04) ──
-  { email: "asif.anwar@orbitax.com", name: "Asif Anwar", role: "Associate Software Engineer" },
+  // Asif Anwar (asif.anwar@orbitax.com) removed 2026-10-30 — resigned, no longer a member.
   { email: "mamun.hossain@orbitax.com", name: "Mamun Hossain", role: "Principal Software Engineer" },
   { email: "rejwanul.haque@orbitax.com", name: "Md. Rejwanul Haque (Rajon)", role: "Associate Software Engineer" },
   { email: "rifatul.islam@orbitax.com", name: "Md. Rifatul Islam", role: "Software Engineer" },
