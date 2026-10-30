@@ -62,7 +62,8 @@ export async function GET(
 
   // First page of the transaction history; older pages load via
   // GET /api/members/[slug]/transactions?offset=…&limit=…
-  const txPage = pageMemberTx(state.transactions, email, 0, TX_PAGE);
+  const nameByEmail = new Map(state.members.map((m) => [m.email, m.name]));
+  const txPage = pageMemberTx(state.transactions, email, 0, TX_PAGE, nameByEmail);
 
   return NextResponse.json({
     email,

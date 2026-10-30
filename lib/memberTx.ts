@@ -38,9 +38,19 @@ export function memberRows(txs: MemberTxRow[], email: string): MemberTxRow[] {
     .sort((a, b) => b.seq - a.seq);
 }
 
-/** Shape one row for the profile UI (direction + counterparty relative to `email`). */
-export function mapMemberTx(t: MemberTxRow, email: string): MappedTx {
-  const nameOf = (e: string | null) => (e ? allowlistEntry(e)?.name || e : "");
+/**
+ * Shape one row for the profile UI (direction + counterparty relative to `email`).
+ * Names resolve from the allowlist first, then an optional member-name map (so an
+ * ex-member no longer on the allowlist still shows their name, not a raw email),
+ * then the email as a last resort.
+ */
+export function mapMemberTx(
+  t: MemberTxRow,
+  email: string,
+  nameByEmail?: Map<string, string>,
+): MappedTx {
+  const nameOf = (e: string | null) =>
+    e ? allowlistEntry(e)?.name || nameByEmail?.get(e) || e : "";
   let direction: MappedTx["direction"] = "adjust";
   let counterpartyName = "";
   if (t.type === "MINE") direction = "mine";
@@ -71,12 +81,13 @@ export function pageMemberTx(
   email: string,
   offset: number,
   limit: number,
+  nameByEmail?: Map<string, string>,
 ) {
   const all = memberRows(txs, email);
   const start = Math.max(0, offset);
   const slice = all.slice(start, start + Math.max(0, limit));
   return {
-    transactions: slice.map((t) => mapMemberTx(t, email)),
+    transactions: slice.map((t) => mapMemberTx(t, email, nameByEmail)),
     total: all.length,
     offset: start,
     limit,

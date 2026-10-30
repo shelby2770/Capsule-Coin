@@ -14,8 +14,11 @@ export async function GET(req: Request) {
   if (!gate.ok) return gateResponse(gate.status);
 
   const state = await readState();
+  // Name from the allowlist first, then the member record (so an ex-member no
+  // longer on the allowlist still shows their name), then the email as a fallback.
+  const byEmail = new Map(state.members.map((m) => [m.email, m.name]));
   const nameOf = (email: string | null) =>
-    email ? allowlistEntry(email)?.name || email : null;
+    email ? allowlistEntry(email)?.name || byEmail.get(email) || email : null;
 
   const recent = [...state.transactions].sort((a, b) => b.seq - a.seq).slice(0, 100);
   const transactions: LedgerTx[] = recent.map((t) => ({

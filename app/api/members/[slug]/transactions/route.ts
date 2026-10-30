@@ -37,5 +37,6 @@ export async function GET(
   const limit = Math.min(MAX_LIMIT, Math.max(1, rawLimit));
 
   const state = await readState();
-  return NextResponse.json(pageMemberTx(state.transactions, email, offset, limit));
+  const nameByEmail = new Map(state.members.map((m) => [m.email, m.name]));
+  return NextResponse.json(pageMemberTx(state.transactions, email, offset, limit, nameByEmail));
 }
